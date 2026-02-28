@@ -48,10 +48,9 @@ WHETHER it's valid    -->  Z3 / Mace4 / Prover9 (formal verification)
 ```
                     +--------------------------------------------------+
                     |              AGENT CONTROLLER                     |
-                    |         (Anthropic Claude API)                    |
+                    |        (Claude Code CLI subprocess)               |
                     |                                                   |
-                    |   assess -> plan -> execute -> interpret ->       |
-                    |   conjecture -> verify -> update -> report        |
+                    |          plan -> execute -> interpret -> act      |
                     |                                                   |
                     |   +------------------------------------------+   |
                     |   |           TOOL INTERFACE                  |   |
@@ -523,20 +522,18 @@ The largest weights (0.15 each) go to `has_models` and `is_novel` -- a structure
 
 ### Controller (`src/agent/controller.py`)
 
-The `AgentController` runs an LLM-driven research loop using the Anthropic Messages API with tool use. Each research cycle follows 8 phases:
+The `AgentController` drives a research loop using the Claude Code CLI (`claude --print`) as a subprocess. Each research cycle follows 4 phases:
 
 ```
-1. ASSESS    -->  Review library state and previous cycle results
-2. PLAN      -->  LLM decides which structures and moves to focus on
-3. EXECUTE   -->  LLM calls explore(), check_models(), etc. via tool use
-4. INTERPRET -->  LLM analyzes the returned candidates and spectra
-5. CONJECTURE -> LLM proposes testable mathematical statements
-6. VERIFY    -->  Conjectures are tested via model checking or Prover9
-7. UPDATE    -->  Interesting discoveries are added to the library
-8. REPORT    -->  Markdown summary is saved to library/reports/
+1. PLAN      -->  Claude designs the exploration strategy (via CLI call)
+2. EXECUTE   -->  Tools run locally: explore candidates, check models via Z3
+3. INTERPRET -->  Claude analyzes results and proposes conjectures (via CLI call)
+4. ACT       -->  Add discoveries to library, log conjectures, save report
 ```
 
-Each cycle allows up to 20 tool-use turns. The controller builds a context message containing:
+Each cycle makes exactly 2 Claude CLI calls: one for planning, one for interpretation. Claude outputs structured JSON between XML tags (`<plan>`, `<decisions>`), which the controller parses and executes. Live progress is printed at every step — timestamped log lines, animated spinners during Claude calls, and per-candidate model checking status.
+
+The controller builds a context message for each Claude call containing:
 - The list of known structures (14 seeds)
 - Any previously discovered structures with their scores
 - Summary of the previous cycle (candidates generated, models found, discoveries)
@@ -564,12 +561,13 @@ These caches allow the `score` and `add_to_library` tools to reference candidate
 
 ### System Prompt
 
-The agent receives a system prompt that:
+The agent receives a system prompt (via `--system-prompt` flag) that:
 1. Establishes its role as a mathematical research agent in universal algebra
-2. Describes each tool's purpose
-3. Outlines the research process (review -> choose -> generate -> check -> score -> conjecture -> persist)
-4. Defines what makes a structure mathematically interesting
-5. Injects the current research goal
+2. Describes the 7 available structural moves
+3. Defines what makes a structure mathematically interesting
+4. Injects the current research goal
+
+Claude's built-in tools are disabled (`--tools ""`) — it acts purely as a planner and analyst, outputting structured JSON decisions that the controller executes locally.
 
 ---
 

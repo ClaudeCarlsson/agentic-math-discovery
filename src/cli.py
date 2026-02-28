@@ -2,7 +2,7 @@
 
 Usage:
     mathdisc explore --depth 2 --check-models --max-size 6
-    mathdisc agent --model claude-sonnet-4-6 --cycles 10 --goal "explore broadly"
+    mathdisc agent --model claude-opus-4-6 --cycles 10 --goal "explore broadly"
     mathdisc report --cycle latest
     mathdisc list-structures
 """

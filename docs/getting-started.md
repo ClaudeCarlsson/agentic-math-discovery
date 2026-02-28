@@ -22,7 +22,7 @@ That is all. No virtual environment is required for a quick start, though you ar
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/your-org/agentic-math-discovery.git
+git clone https://github.com/ClaudeCarlsson/agentic-math-discovery.git
 cd agentic-math-discovery
 ```
 
@@ -46,8 +46,9 @@ These provide:
 ### Optional dependencies
 
 ```bash
-# For the LLM-driven research agent (requires an Anthropic API key)
-pip install anthropic
+# For the LLM-driven research agent — requires the Claude Code CLI
+npm install -g @anthropic-ai/claude-code
+claude auth    # authenticate once
 
 # For running the test suite
 pip install pytest pytest-cov ruff
@@ -370,14 +371,15 @@ This applies only COMPLETE and DEFORM at each depth, starting from Semigroup and
 
 ## 9. Running the Agent
 
-The LLM agent wraps the entire exploration pipeline in an autonomous research loop. Instead of you choosing which structures and moves to try, a Claude model makes those decisions, interprets the results, forms conjectures, and records discoveries.
+The LLM agent wraps the entire exploration pipeline in an autonomous research loop. Instead of you choosing which structures and moves to try, Claude (via the Claude Code CLI) makes those decisions, interprets the results, forms conjectures, and records discoveries.
 
 ### Setup
 
-You need an Anthropic API key:
+Install and authenticate the Claude Code CLI:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+npm install -g @anthropic-ai/claude-code
+claude auth    # authenticate once
 ```
 
 ### Running it
@@ -386,22 +388,26 @@ export ANTHROPIC_API_KEY=sk-ant-...
 python3 run.py agent --cycles 3 --goal "find novel algebraic structures"
 ```
 
+By default this uses Claude Opus 4.6 with high-effort thinking. You can customize:
+
+```bash
+python3 run.py agent --model sonnet --effort medium --cycles 5
+```
+
 ### What happens in each cycle
 
-The agent runs a loop of 8 steps per cycle:
+The agent runs 4 phases per cycle, with live progress output at every step:
 
 ```
-1. ASSESS    Review the library and discoveries from previous cycles
-2. PLAN      Decide which base structures and moves to focus on
-3. EXECUTE   Call explore() to generate candidates
-4. INTERPRET Call check_models() and score() on top candidates
-5. CONJECTURE Propose testable mathematical statements about interesting structures
-6. VERIFY    Test conjectures via model checking or theorem proving
-7. UPDATE    Add genuinely novel discoveries to the persistent library
-8. REPORT    Generate a human-readable Markdown summary of the cycle
+1. PLAN      Claude designs the exploration strategy (which bases, moves, depth)
+2. EXECUTE   Tools run locally: generate candidates, check models via Z3
+3. INTERPRET Claude analyzes results, proposes conjectures
+4. ACT       Add discoveries to persistent library, log conjectures
 ```
 
-The agent has access to 6 tools: `explore`, `check_models`, `prove`, `score`, `search_library`, and `add_to_library`. It calls these in whatever order makes sense for its current research goal. A single cycle may involve up to 20 tool calls.
+You'll see timestamped log lines, spinners with elapsed timers during Claude calls, per-candidate model checking status, and Claude's reasoning summaries printed inline. You'll always know exactly what it's doing and how long it's been running.
+
+The agent has access to 6 local tools: `explore`, `check_models`, `prove`, `score`, `search_library`, and `add_to_library`. Claude outputs structured JSON plans, and the controller executes these tools on its behalf.
 
 ### Where reports are saved
 
@@ -452,11 +458,11 @@ python3 run.py agent --cycles 5 \
 # Broad exploration with deeper search
 python3 run.py agent --cycles 10 --depth 2 --goal "explore broadly"
 
-# Use a specific model
-python3 run.py agent --model claude-sonnet-4-6 --cycles 3
+# Use a faster model with less thinking effort
+python3 run.py agent --model sonnet --effort medium --cycles 5
 ```
 
-The default base structures are Group, Ring, Lattice, and Quasigroup. The default model is `claude-sonnet-4-6`. Increasing `--cycles` lets the agent build on its own discoveries across cycles; each cycle sees the results of all previous ones.
+The default base structures are Group, Ring, Lattice, and Quasigroup. The default model is `claude-opus-4-6` with `--effort high`. Increasing `--cycles` lets the agent build on its own discoveries across cycles; each cycle sees the results of all previous ones.
 
 ---
 

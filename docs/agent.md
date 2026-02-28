@@ -2,15 +2,75 @@
 
 The LLM agent is the strategic layer that drives mathematical discovery. It plans research directions, interprets results, proposes conjectures, and steers the search toward genuinely novel structures.
 
+The agent uses the **Claude Code CLI** (`claude --print`) as a subprocess — no Python SDK or API key management required. Just install the CLI and authenticate once.
+
 ## Overview
 
-The agent operates in **research cycles**. Each cycle is one complete iteration of the discovery loop:
+The agent operates in **research cycles**. Each cycle has four phases:
 
 ```
-ASSESS → PLAN → EXECUTE → INTERPRET → CONJECTURE → VERIFY → UPDATE → REPORT
+PLAN → EXECUTE → INTERPRET → ACT
 ```
 
-The agent does NOT do heavy mathematical computation — that's the job of the structure engine, model checker, and proof engine. The agent is the **strategist and storyteller**: it decides what to explore, recognizes patterns in results, and communicates findings.
+- **PLAN**: Claude designs the exploration strategy (which structures, moves, depth)
+- **EXECUTE**: Tools run locally — generate candidates, check models via Z3/Mace4
+- **INTERPRET**: Claude analyzes results and proposes conjectures
+- **ACT**: Interesting discoveries are added to the persistent library
+
+The agent does NOT do heavy mathematical computation — that's the job of the structure engine, model checker, and proof engine. The agent is the **strategist and storyteller**.
+
+---
+
+## Live Observability
+
+Every phase prints real-time progress so you always know what's happening:
+
+```
+────────────────────────── Cycle 1/3 ──────────────────────────
+[    0s] Goal: Find novel loop variants
+
+[    0s] PLAN
+[    0s] Asking Claude to design exploration strategy...
+[   43s] Claude planning done (43s, 55 lines)
+[   43s] Strategy: Loops occupy a rich intermediate space between
+         quasigroups and groups...
+[   43s]   Explore ['Loop'] with [COMPLETE, DEFORM] at depth 2
+[   43s]   Explore ['Loop', 'Lattice'] with [TRANSFER] at depth 1
+
+[   43s] EXECUTE
+[   43s] Exploring [1/7]: ['Loop'] x {COMPLETE, DEFORM} depth=2
+[   43s]   30 candidates generated, 30 above threshold (0.0s)
+[   43s] Checking models for top 10 candidates (sizes 2-6)...
+[   44s]   [ 1/10] Quasigroup_dual(mul)_deform(COMM) sizes={2,3,4,5,6} models=50 (0.6s)
+[   48s]   [ 7/10] Loop_q(IDEM,mul)_int(mul) no models (0.2s)
+[   49s] Model check: 7 with models, 3 empty
+
+[   49s] INTERPRET
+[   49s] Asking Claude to analyze results...
+[ 2m09s] Claude analyzing done (1m20s, 82 lines)
+[ 2m09s] Analysis: Of 289 candidates, three distinct behavioral classes...
+
+[ 2m09s] ACT
+[ 2m09s] + Discovery: EvenLoop (from Loop_q(COMM,ldiv)_int(mul), score: 0.842)
+[ 2m09s] ? Conjecture: [EvenLoop] has models iff domain size is even
+
+╭──────────────────────────────────────╮
+│ Cycle 1 complete                     │
+│   Duration: 2m09s                    │
+│   Candidates: 289 generated          │
+│   Models: 7 candidates had models    │
+│   Discoveries: 1 added              │
+│   Conjectures: 4 proposed           │
+╰──────────────────────────────────────╯
+```
+
+Features:
+- **Timestamped log lines** — elapsed time since cycle start on every line
+- **Animated spinners** — live timer during Claude CLI calls (the longest waits)
+- **Per-candidate model checking** — see each candidate's status as it's checked
+- **Inline reasoning summaries** — Claude's strategy and analysis shown immediately
+- **Phase headers** — clear PLAN/EXECUTE/INTERPRET/ACT transitions
+- **Cycle summary panel** — duration, candidate counts, discoveries, conjectures
 
 ---
 
@@ -19,14 +79,14 @@ The agent does NOT do heavy mathematical computation — that's the job of the s
 ```python
 @dataclass
 class AgentConfig:
-    model: str = "claude-sonnet-4-6"       # LLM model to use
-    api_key: str = ""                      # Anthropic API key (or env var)
-    max_cycles: int = 10                   # Maximum research cycles
-    goal: str = "Explore broadly"          # Natural language research goal
-    explore_depth: int = 2                 # Move depth per cycle
-    max_model_size: int = 6                # Z3/Mace4 domain size limit
-    score_threshold: float = 0.3           # Minimum score to consider
-    base_structures: list[str] = [         # Starting structures
+    model: str = "claude-opus-4-6"      # Claude model to use
+    effort: str = "high"                # Thinking effort: low, medium, high
+    max_cycles: int = 10                # Maximum research cycles
+    goal: str = "Explore broadly"       # Natural language research goal
+    explore_depth: int = 2              # Move depth per cycle
+    max_model_size: int = 6             # Z3/Mace4 domain size limit
+    score_threshold: float = 0.3        # Minimum score to consider
+    base_structures: list[str] = [      # Starting structures
         "Group", "Ring", "Lattice", "Quasigroup"
     ]
 ```
@@ -34,7 +94,7 @@ class AgentConfig:
 ### CLI Usage
 
 ```bash
-# Broad exploration
+# Broad exploration (default: Opus 4.6, high effort thinking)
 python3 run.py agent --cycles 5 --goal "explore broadly"
 
 # Targeted search
@@ -42,15 +102,24 @@ python3 run.py agent --cycles 10 \
   --goal "find structures with positivity that constrain spectra" \
   --base InnerProductSpace --base LieAlgebra
 
-# Using a specific model
-python3 run.py agent --model claude-opus-4-6 --cycles 3
+# Use a different model or effort level
+python3 run.py agent --model sonnet --effort medium --cycles 3
+```
+
+### Prerequisites
+
+Install the Claude Code CLI:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude auth          # Authenticate once
 ```
 
 ---
 
 ## The 6 Tools
 
-The agent interacts with the system exclusively through 6 tools, defined as JSON schemas for function calling:
+The agent's Python-side tool executor provides 6 tools. These are called locally — Claude never executes them directly. Instead, Claude outputs a structured plan, and the controller executes the tools on its behalf.
 
 ### 1. `explore`
 
@@ -139,90 +208,75 @@ Persist a verified discovery for future cycles.
 
 ## The Research Cycle in Detail
 
-### 1. ASSESS
+### Phase 1: PLAN
 
-The controller builds a context message containing:
+The controller sends Claude a prompt containing:
 - List of all known structures (14 seed + any discovered)
 - Summary of the previous cycle (candidates generated, models found, discoveries)
 - Top candidates from the last run
 - Current research goal
 - Suggested base structures and exploration depth
 
-### 2. PLAN
+Claude responds with a structured JSON plan specifying which structures to explore, which moves to apply, search depth, and how many candidates to model-check.
 
-The LLM reads the context and decides:
-- Which base structures to focus on this cycle
-- Which moves to apply (all 7, or a targeted subset)
-- Whether to explore broadly (many structures, shallow depth) or deeply (few structures, deep moves)
-- Whether to follow up on promising candidates from the last cycle
+### Phase 2: EXECUTE
 
-### 3. EXECUTE
+The controller executes Claude's plan locally:
 
-The agent calls tools in a multi-turn loop:
+1. Run each exploration (structure × moves × depth) via the `explore` tool
+2. Sort all candidates by interestingness score
+3. Check models for the top N candidates using Z3/Mace4
+4. Attach model spectrum data to each candidate
 
-```
-Turn 1: Agent calls explore() with chosen parameters
-Turn 2: Agent reviews candidates, calls check_models() on top ones
-Turn 3: Agent calls score() on candidates with interesting models
-Turn 4: Agent calls prove() to test conjectures
-Turn 5: Agent calls add_to_library() for discoveries
-...
-```
+Progress is printed live — each exploration step, each model check with results.
 
-The loop runs for up to 20 turns per cycle.
+### Phase 3: INTERPRET
 
-### 4. INTERPRET
+The controller sends Claude the execution results:
+- Total candidates generated
+- Top 20 candidates with scores and model spectra
+- Claude's original plan for context
 
-Between tool calls, the agent produces text blocks analyzing results:
-- "This structure has models only at prime sizes — investigating further"
-- "The Transfer of LieAlgebra to Ring produced a high-scoring candidate with positivity"
-- "Model checking timed out at size 7 — this suggests computational complexity"
+Claude responds with:
+- Detailed mathematical analysis of the results
+- Which discoveries should be added to the library
+- Conjectures about interesting structures
 
-### 5. CONJECTURE
+### Phase 4: ACT
 
-The agent proposes testable statements:
-- "Every model of this structure has a commutative sub-operation"
-- "No model exists at composite sizes"
-- "The number of models at size p follows floor(p/2) - 1"
-
-These are tested via `check_models()` (exhaustive for small sizes) or `prove()` (Prover9).
-
-### 6. VERIFY
-
-Conjectures are checked and classified:
-- **Verified**: Holds for all tested sizes
-- **Disproved**: Counterexample found
-- **Open**: Neither proved nor disproved within timeout
-
-### 7. UPDATE
-
-Interesting discoveries are persisted via `add_to_library()`. The library manager writes JSON files to `library/discovered/` with full metadata.
-
-### 8. REPORT
-
-The controller generates a Markdown report saved to `library/reports/cycle_NNN_report.md` containing:
-- Statistics (candidates generated, models found, discoveries)
-- Top candidates with scores
-- Agent reasoning excerpts
-- Any discoveries added to the library
+The controller executes Claude's decisions:
+- Add discoveries to the persistent library via `add_to_library`
+- Log conjectures for future investigation
+- Save a Markdown cycle report to `library/reports/`
 
 ---
 
-## System Prompt
+## How Claude Is Called
 
-The agent receives a system prompt that defines its role:
+The agent calls the Claude CLI as a subprocess:
 
+```python
+cmd = [
+    "claude", "--print",
+    "--model", "claude-opus-4-6",
+    "--effort", "high",
+    "--output-format", "text",
+    "--tools", "",                    # Disable CLI tools — we only want text
+    "--no-session-persistence",
+    "--system-prompt", system_prompt,
+]
+
+result = subprocess.run(cmd, input=user_prompt, capture_output=True, text=True)
 ```
-You are a mathematical research agent specializing in automated theory
-formation in universal algebra. Your goal is to discover structurally
-novel, non-trivial mathematical concepts...
-```
 
-The prompt:
-- Describes each tool and its purpose
-- Outlines the research process (explore → check → score → conjecture → add)
-- Defines what makes a structure "interesting"
-- Includes the current research goal (configurable per run)
+Key details:
+- `--tools ""` disables all built-in Claude Code tools (Read, Edit, Bash, etc.) — Claude acts purely as a planner/analyst
+- `--effort high` enables maximum thinking depth for complex mathematical reasoning
+- `--no-session-persistence` prevents cluttering the Claude session history
+- The `CLAUDECODE` environment variable is unset to allow spawning from within an existing Claude Code session
+- Claude outputs structured JSON between `<plan>...</plan>` or `<decisions>...</decisions>` tags, which the controller parses
+
+Two Claude calls per cycle: one for planning, one for interpretation. Each call takes 30-90 seconds with Opus at high effort.
 
 ---
 
@@ -275,12 +329,14 @@ python3 run.py report --top 20 --sort-by score
 # Research Cycle 7
 
 **Goal:** Find structures with positivity that constrain spectra
-**Duration:** 45.2s
+**Duration:** 129.3s
+**Model:** claude-opus-4-6 (effort: high)
 
 ## Statistics
 - Candidates generated: 847
 - Candidates with models: 23
 - Discoveries added: 2
+- Conjectures: 4
 
 ## Top Candidates
 ### Transfer(LieAlg_op+norm → Ring_q(ASSOC))
@@ -292,19 +348,11 @@ python3 run.py report --top 20 --sort-by score
 ## Discoveries
 - **NormedLieBridge** (score: 0.873)
 - **PositiveSemifield** (score: 0.812)
+
+## Conjectures
+- [NormedLieBridge] Models exist only at prime sizes
+- [PositiveSemifield] The number of models at size p follows floor(p/2) - 1
 ```
-
----
-
-## Model Requirements
-
-The agent needs an LLM that supports:
-- **Tool use / function calling** — all modern Claude and GPT models support this
-- **Structured JSON output** — for tool arguments
-- **Multi-turn conversation** — the tool-use loop requires multiple exchanges
-- **Basic mathematical knowledge** — for interpreting model spectra and recognizing known structures
-
-Recommended: `claude-sonnet-4-6` for cost-effective cycles, `claude-opus-4-6` for deeper mathematical reasoning.
 
 ---
 
@@ -316,7 +364,8 @@ from src.library.manager import LibraryManager
 
 library = LibraryManager("library")
 config = AgentConfig(
-    model="claude-sonnet-4-6",
+    model="claude-opus-4-6",
+    effort="high",
     max_cycles=10,
     goal="find novel quasigroup variants",
     base_structures=["Quasigroup", "Loop"],

@@ -371,12 +371,35 @@ lib.get_discovery(discovery_id) -> dict | None
 
 ## Agent
 
+### `src.agent.controller.AgentConfig`
+
+```python
+@dataclass
+class AgentConfig:
+    model: str = "claude-opus-4-6"    # Claude model
+    effort: str = "high"              # Thinking effort: low, medium, high
+    max_cycles: int = 10              # Maximum research cycles
+    goal: str = "Explore broadly"     # Natural language research goal
+    explore_depth: int = 2            # Move depth per cycle
+    max_model_size: int = 6           # Z3/Mace4 domain size limit
+    score_threshold: float = 0.3      # Minimum score to consider
+    base_structures: list[str] = ["Group", "Ring", "Lattice", "Quasigroup"]
+```
+
 ### `src.agent.controller.AgentController`
+
+Drives the Claude CLI-powered research loop. Requires the `claude` CLI on PATH.
 
 ```python
 controller = AgentController(config: AgentConfig, library: LibraryManager)
 reports: list[CycleReport] = controller.run(num_cycles=5)
 ```
+
+Each cycle makes 2 Claude CLI calls (`claude --print --model <model> --effort <effort>`):
+1. **Planning call** — Claude outputs a JSON plan between `<plan>` tags
+2. **Interpretation call** — Claude outputs decisions between `<decisions>` tags
+
+Live progress is printed to the console throughout.
 
 ### `src.agent.tools.ToolExecutor`
 

@@ -7,7 +7,7 @@ This guide covers how to extend the mathematical discovery system: adding new st
 ## Development Setup
 
 ```bash
-git clone https://github.com/your-org/agentic-math-discovery.git
+git clone https://github.com/ClaudeCarlsson/agentic-math-discovery.git
 cd agentic-math-discovery
 pip install click rich pydantic networkx numpy z3-solver pytest ruff
 python3 -m pytest tests/ -v   # verify 95 tests pass

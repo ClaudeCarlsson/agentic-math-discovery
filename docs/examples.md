@@ -243,9 +243,17 @@ for r in results:
 After running the agent, review and analyze results:
 
 ```bash
-# Run the agent
+# Run the agent (uses Claude Code CLI with Opus + high-effort thinking)
 python3 run.py agent --cycles 10 --goal "find novel loop variants" \
   --base Loop --base Quasigroup --base Group
+
+# You'll see live progress throughout:
+#   [   0s] PLAN
+#   [  43s] Claude planning done (43s, 55 lines)
+#   [  43s] Strategy: Loops occupy a rich intermediate space...
+#   [  44s] Checking models for top 10 candidates...
+#   [  44s]   [ 1/10] Loop_q(COMM,mul)_int(mul) sizes={2,3,4,5,6} models=44 (0.8s)
+#   ...
 
 # View the latest report
 python3 run.py report --cycle latest

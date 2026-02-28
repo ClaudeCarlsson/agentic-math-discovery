@@ -82,14 +82,14 @@ See [docs/architecture.md](docs/architecture.md) for the full architectural spec
 ### Installation
 
 ```bash
-git clone https://github.com/your-org/agentic-math-discovery.git
+git clone https://github.com/ClaudeCarlsson/agentic-math-discovery.git
 cd agentic-math-discovery
 
 # Install core dependencies
 pip install click rich pydantic networkx numpy z3-solver
 
-# (Optional) For the LLM agent
-pip install anthropic
+# (Optional) For the LLM agent — requires Claude Code CLI
+npm install -g @anthropic-ai/claude-code
 
 # (Optional) For development
 pip install pytest pytest-cov ruff
@@ -113,20 +113,25 @@ python3 run.py inspect Group --max-size 5
 
 ### Running the LLM Agent
 
-```bash
-export ANTHROPIC_API_KEY=your-key-here
+The agent uses the [Claude Code CLI](https://claude.ai/claude-code) to drive research cycles. It calls `claude --print` as a subprocess with Opus and high-effort thinking, so there's no API key to manage — just authenticate the CLI once.
 
-# Broad exploration: 5 cycles
+```bash
+# Broad exploration: 5 cycles (default: Opus 4.6, high effort)
 python3 run.py agent --cycles 5 --goal "explore broadly"
 
-# Targeted search
+# Targeted search with live progress output
 python3 run.py agent --cycles 10 \
   --goal "find structures with positivity that constrain spectra" \
   --base InnerProductSpace --base LieAlgebra
 
+# Use a different model or effort level
+python3 run.py agent --model sonnet --effort medium --cycles 3
+
 # View the results
 python3 run.py report --cycle latest
 ```
+
+The agent shows live progress at every step — phase headers, elapsed timers, per-candidate model checking, Claude's reasoning summaries, and discovery/conjecture logging.
 
 See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 
@@ -157,7 +162,8 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 ### `agent` Options
 
 ```
---model NAME       LLM model to use (default: claude-sonnet-4-6)
+--model NAME       Claude model to use (default: claude-opus-4-6)
+--effort LEVEL     Thinking effort: low, medium, high (default: high)
 --cycles N         Number of research cycles (default: 5)
 --goal TEXT        Research goal in natural language
 --depth N          Exploration depth per cycle (default: 2)
@@ -172,15 +178,13 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 Each cycle of the agent follows this pattern:
 
 ```
-1. ASSESS   → Review library and recent discoveries
-2. PLAN     → Choose structures, moves, and depth
-3. EXECUTE  → Run explore(), check_models(), score()
-4. INTERPRET → LLM analyzes top candidates
-5. CONJECTURE → Propose testable mathematical statements
-6. VERIFY   → Test conjectures via model checking / Prover9
-7. UPDATE   → Add discoveries to persistent library
-8. REPORT   → Generate human-readable Markdown summary
+1. PLAN      → Claude designs exploration strategy (which bases, moves, depth)
+2. EXECUTE   → Tools run locally: explore candidates, check models via Z3
+3. INTERPRET → Claude analyzes results, proposes conjectures
+4. ACT       → Add discoveries to persistent library, log conjectures
 ```
+
+Every phase prints live progress — timestamped log lines, spinners with elapsed timers during Claude calls, per-candidate model checking status, and inline reasoning summaries.
 
 See [docs/agent.md](docs/agent.md) for the full agent specification.
 
@@ -288,8 +292,8 @@ Test categories:
 | Setup | Components | Notes |
 |-------|-----------|-------|
 | **Minimum** (CPU only) | Structure engine + Z3 | No LLM needed. You read results yourself. |
-| **Recommended** | + Claude API or local 7B model | Full agent loop with strategic search. |
-| **Optimal** | + Mace4/Prover9 + 24GB GPU | Parallel model checking, larger local models. |
+| **Recommended** | + Claude Code CLI | Full agent loop with Opus 4.6 strategic search. |
+| **Optimal** | + Mace4/Prover9 | Parallel model checking + automated theorem proving. |
 
 The core engine (structure generation, scoring, Z3 model finding) runs on any machine with Python 3.11+ and 4GB RAM. Depth-2 exploration of all 14 structures generates ~95,000 candidates in under 10 seconds.
 
