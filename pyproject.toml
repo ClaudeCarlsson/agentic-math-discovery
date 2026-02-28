@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentic-math-discovery"
+version = "0.1.0"
+description = "Agentic AI for Mathematical Structure Discovery"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "click>=8.1",
+    "z3-solver>=4.12",
+    "numpy>=1.26",
+    "rich>=13.7",
+    "pydantic>=2.5",
+    "networkx>=3.2",
+    "anthropic>=0.40",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.2",
+]
+local-llm = [
+    "openai>=1.12",
+]
+
+[project.scripts]
+mathdisc = "src.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
