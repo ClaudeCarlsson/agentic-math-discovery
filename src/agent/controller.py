@@ -1,4 +1,4 @@
-"""Agent Controller: Claude CLI-driven research loop.
+"""Agent Controller: Claude CLI-driven research loop with live observability.
 
 The agent operates in cycles, each consisting of:
 1. PLAN   - Claude decides what to explore (via claude CLI)
@@ -15,13 +15,20 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
 from src.agent.tools import ToolExecutor
 from src.library.manager import LibraryManager
+
+console = Console()
 
 
 @dataclass
@@ -84,6 +91,14 @@ mathematical concepts by exploring the space of algebraic signatures.
 {goal}"""
 
 
+def _format_elapsed(seconds: float) -> str:
+    """Format elapsed time as a human-readable string."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    m, s = divmod(int(seconds), 60)
+    return f"{m}m{s:02d}s"
+
+
 class AgentController:
     """Orchestrates the Claude CLI-driven mathematical discovery loop."""
 
@@ -92,9 +107,19 @@ class AgentController:
         self.library = library
         self.tools = ToolExecutor(library)
         self.history: list[CycleReport] = []
+        self._cycle_start: float = 0.0
 
-    def _call_claude(self, prompt: str, system: str) -> str:
-        """Call the Claude CLI with the given prompt and return the response."""
+    def _log(self, msg: str, style: str = "") -> None:
+        """Print a timestamped log line relative to cycle start."""
+        elapsed = time.time() - self._cycle_start if self._cycle_start else 0
+        ts = f"[dim][{_format_elapsed(elapsed):>6s}][/dim]"
+        if style:
+            console.print(f"{ts} [{style}]{msg}[/{style}]")
+        else:
+            console.print(f"{ts} {msg}")
+
+    def _call_claude(self, prompt: str, system: str, label: str = "Thinking") -> str:
+        """Call the Claude CLI with a live spinner showing elapsed time."""
         cmd = [
             "claude", "--print",
             "--model", self.config.model,
@@ -109,20 +134,53 @@ class AgentController:
         env = os.environ.copy()
         env.pop("CLAUDECODE", None)
 
-        result = subprocess.run(
-            cmd,
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=600,
-            env=env,
-        )
+        call_start = time.time()
+        stop_event = threading.Event()
+
+        def update_spinner(status):
+            while not stop_event.is_set():
+                e = time.time() - call_start
+                cycle_e = time.time() - self._cycle_start if self._cycle_start else e
+                status.update(
+                    f"[bold cyan]{label}[/bold cyan] "
+                    f"[dim]({_format_elapsed(e)} elapsed, "
+                    f"cycle {_format_elapsed(cycle_e)})[/dim]"
+                )
+                stop_event.wait(1.0)
+
+        with console.status(
+            f"[bold cyan]{label}[/bold cyan]", spinner="dots"
+        ) as status:
+            timer = threading.Thread(target=update_spinner, args=(status,), daemon=True)
+            timer.start()
+
+            result = subprocess.run(
+                cmd,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env=env,
+            )
+
+            stop_event.set()
+            timer.join()
+
+        elapsed = time.time() - call_start
 
         if result.returncode != 0:
             stderr = result.stderr.strip()[:500]
+            self._log(f"{label} FAILED after {_format_elapsed(elapsed)}", "bold red")
             raise RuntimeError(f"Claude CLI failed (exit {result.returncode}): {stderr}")
 
-        return result.stdout.strip()
+        response = result.stdout.strip()
+        # Show a brief summary of the response length
+        lines = response.count("\n") + 1
+        self._log(
+            f"{label} [green]done[/green] "
+            f"[dim]({_format_elapsed(elapsed)}, {lines} lines)[/dim]"
+        )
+        return response
 
     def run(self, num_cycles: int | None = None) -> list[CycleReport]:
         """Run the agent for the specified number of cycles."""
@@ -131,11 +189,27 @@ class AgentController:
         cycles = num_cycles or self.config.max_cycles
         reports = []
 
+        console.print()
+        console.rule(
+            f"[bold]Starting {cycles} research cycle(s)[/bold]",
+            style="blue",
+        )
+        console.print()
+
         for i in range(cycles):
-            report = self._run_cycle(i + 1)
+            report = self._run_cycle(i + 1, cycles)
             reports.append(report)
             self.history.append(report)
             self._save_report(report)
+
+        console.print()
+        console.rule("[bold green]All cycles complete[/bold green]", style="green")
+        total_disc = sum(len(r.discoveries) for r in reports)
+        total_cand = sum(r.candidates_generated for r in reports)
+        console.print(
+            f"  Total: {total_cand} candidates explored, "
+            f"{total_disc} discoveries added\n"
+        )
 
         return reports
 
@@ -150,14 +224,16 @@ class AgentController:
             )
             if result.returncode != 0:
                 raise RuntimeError("claude CLI returned non-zero exit code")
+            version = result.stdout.strip()
+            console.print(f"  [dim]Claude CLI: {version}[/dim]")
         except FileNotFoundError:
             raise RuntimeError(
                 "Claude CLI not found. Install: npm install -g @anthropic-ai/claude-code"
             )
 
-    def _run_cycle(self, cycle_num: int) -> CycleReport:
-        """Execute one complete research cycle."""
-        start = time.time()
+    def _run_cycle(self, cycle_num: int, total_cycles: int) -> CycleReport:
+        """Execute one complete research cycle with live progress output."""
+        self._cycle_start = time.time()
 
         system = SYSTEM_PROMPT.format(goal=self.config.goal)
 
@@ -168,13 +244,43 @@ class AgentController:
         discoveries = []
         conjectures = []
 
-        # ── Phase 1: PLAN ──────────────────────────────────────────
+        # ── Cycle header ─────────────────────────────────────────
+        console.rule(
+            f"[bold cyan]Cycle {cycle_num}/{total_cycles}[/bold cyan]",
+            style="cyan",
+        )
+        self._log(f"Goal: [italic]{self.config.goal}[/italic]")
+        console.print()
+
+        # ── Phase 1: PLAN ────────────────────────────────────────
+        self._log("PLAN", "bold yellow")
+        self._log("Asking Claude to design exploration strategy...")
+
         plan_prompt = self._build_plan_prompt(cycle_num)
-        plan_response = self._call_claude(plan_prompt, system)
+        plan_response = self._call_claude(
+            plan_prompt, system, label="Claude planning"
+        )
         reasoning_parts.append(f"## Planning Phase\n\n{plan_response}")
 
         plan = self._parse_json_block(plan_response, "plan")
-        if not plan:
+        if plan:
+            reasoning = plan.get("reasoning", "")
+            if reasoning:
+                # Show a truncated version of Claude's reasoning
+                short = reasoning[:200] + ("..." if len(reasoning) > 200 else "")
+                self._log(f"Strategy: [italic]{short}[/italic]")
+            explorations = plan.get("explorations", [])
+            for exp in explorations:
+                bases = exp.get("base_structures", [])
+                moves = exp.get("moves", ["ALL"])
+                depth = exp.get("depth", 1)
+                self._log(
+                    f"  Explore {bases} "
+                    f"with [{', '.join(moves)}] "
+                    f"at depth {depth}"
+                )
+        else:
+            self._log("No structured plan parsed, using defaults", "yellow")
             plan = {
                 "reasoning": "Fallback: using default exploration parameters.",
                 "explorations": [{
@@ -185,8 +291,11 @@ class AgentController:
                 "max_model_size": self.config.max_model_size,
             }
 
-        # ── Phase 2: EXECUTE ───────────────────────────────────────
-        exec_results = self._execute_plan(plan)
+        console.print()
+
+        # ── Phase 2: EXECUTE ─────────────────────────────────────
+        self._log("EXECUTE", "bold yellow")
+        exec_results = self._execute_plan_with_progress(plan)
         candidates_generated = exec_results.get("total_candidates", 0)
         top_candidates = exec_results.get("top_candidates", [])
 
@@ -194,29 +303,87 @@ class AgentController:
             if mr.get("total_models", 0) > 0:
                 candidates_with_models += 1
 
-        # ── Phase 3: INTERPRET ─────────────────────────────────────
+        console.print()
+
+        # ── Phase 3: INTERPRET ───────────────────────────────────
+        self._log("INTERPRET", "bold yellow")
+        self._log("Asking Claude to analyze results...")
+
         interpret_prompt = self._build_interpret_prompt(
             cycle_num, plan_response, exec_results
         )
-        interpret_response = self._call_claude(interpret_prompt, system)
+        interpret_response = self._call_claude(
+            interpret_prompt, system, label="Claude analyzing"
+        )
         reasoning_parts.append(f"## Interpretation Phase\n\n{interpret_response}")
 
         decisions = self._parse_json_block(interpret_response, "decisions")
 
-        # ── Phase 4: ACT ───────────────────────────────────────────
         if decisions:
-            for add in decisions.get("add_to_library", []):
+            analysis = decisions.get("analysis", "")
+            if analysis:
+                short = analysis[:300] + ("..." if len(analysis) > 300 else "")
+                self._log(f"Analysis: [italic]{short}[/italic]")
+        else:
+            self._log("No structured decisions parsed", "yellow")
+
+        console.print()
+
+        # ── Phase 4: ACT ─────────────────────────────────────────
+        self._log("ACT", "bold yellow")
+
+        if decisions:
+            adds = decisions.get("add_to_library", [])
+            conjs = decisions.get("conjectures", [])
+
+            if not adds and not conjs:
+                self._log("No discoveries or conjectures this cycle", "dim")
+
+            for add in adds:
+                sig_id = add.get("signature_id", "?")
+                name = add.get("name", "?")
                 try:
                     result = self.tools.execute("add_to_library", add)
                     if result.get("status") == "added":
+                        score = result.get("score", "?")
+                        score_str = f"{score:.3f}" if isinstance(score, float) else str(score)
+                        self._log(
+                            f"[bold green]+ Discovery:[/bold green] "
+                            f"{name} [dim](from {sig_id}, score: {score_str})[/dim]"
+                        )
                         discoveries.append(result)
-                except Exception:
-                    pass
+                    else:
+                        err = result.get("error", "unknown error")
+                        self._log(f"Failed to add {name}: {err}", "red")
+                except Exception as e:
+                    self._log(f"Error adding {name}: {e}", "red")
 
-            for conj in decisions.get("conjectures", []):
+            for conj in conjs:
+                about = conj.get("about", "?")
+                stmt = conj.get("statement", "?")
+                self._log(
+                    f"[bold magenta]? Conjecture:[/bold magenta] "
+                    f"[{about}] {stmt}"
+                )
                 conjectures.append(conj)
+        else:
+            self._log("No decisions from Claude", "dim")
 
-        duration = time.time() - start
+        # ── Cycle summary ────────────────────────────────────────
+        duration = time.time() - self._cycle_start
+
+        console.print()
+        summary = (
+            f"[bold]Cycle {cycle_num} complete[/bold]\n"
+            f"  Duration: {_format_elapsed(duration)}\n"
+            f"  Candidates: {candidates_generated} generated\n"
+            f"  Models: {candidates_with_models} candidates had models\n"
+            f"  Discoveries: {len(discoveries)} added\n"
+            f"  Conjectures: {len(conjectures)} proposed"
+        )
+        border = "green" if discoveries else "yellow" if candidates_with_models else "dim"
+        console.print(Panel(summary, border_style=border))
+        console.print()
 
         return CycleReport(
             cycle_number=cycle_num,
@@ -231,8 +398,8 @@ class AgentController:
             agent_reasoning="\n\n---\n\n".join(reasoning_parts),
         )
 
-    def _execute_plan(self, plan: dict) -> dict:
-        """Execute the exploration plan using local tools."""
+    def _execute_plan_with_progress(self, plan: dict) -> dict:
+        """Execute the exploration plan with live progress output."""
         all_candidates = []
         total_generated = 0
         model_results = []
@@ -244,37 +411,110 @@ class AgentController:
                 "depth": self.config.explore_depth,
             }]
 
-        for exp in explorations:
+        # ── Run explorations ─────────────────────────────────────
+        for i, exp in enumerate(explorations, 1):
+            bases = exp.get("base_structures", self.config.base_structures)
+            moves = exp.get("moves")
+            depth = exp.get("depth", self.config.explore_depth)
+            move_str = ", ".join(moves) if moves else "ALL"
+
+            self._log(
+                f"Exploring [{i}/{len(explorations)}]: "
+                f"{bases} x {{{move_str}}} depth={depth}"
+            )
+
+            explore_start = time.time()
             result = self.tools.execute("explore", {
-                "base_structures": exp.get("base_structures", self.config.base_structures),
-                "moves": exp.get("moves"),
-                "depth": exp.get("depth", self.config.explore_depth),
+                "base_structures": bases,
+                "moves": moves,
+                "depth": depth,
                 "score_threshold": self.config.score_threshold,
             })
-            total_generated += result.get("total_candidates", 0)
+            explore_elapsed = time.time() - explore_start
+
+            n_candidates = result.get("total_candidates", 0)
+            n_above = result.get("above_threshold", 0)
+            total_generated += n_candidates
             all_candidates.extend(result.get("candidates", []))
+
+            self._log(
+                f"  {n_candidates} candidates generated, "
+                f"{n_above} above threshold "
+                f"[dim]({explore_elapsed:.1f}s)[/dim]"
+            )
 
         # Sort by score
         all_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
 
-        # Check models for top N
-        top_n = plan.get("check_models_top_n", 10)
+        if all_candidates:
+            top = all_candidates[0]
+            self._log(
+                f"  Top candidate: {top['name'][:50]} "
+                f"(score: {top.get('score', 0):.3f})"
+            )
+
+        # ── Check models ─────────────────────────────────────────
+        top_n = min(plan.get("check_models_top_n", 10), len(all_candidates))
         max_size = plan.get("max_model_size", self.config.max_model_size)
 
-        for candidate in all_candidates[:top_n]:
-            try:
-                model_result = self.tools.execute("check_models", {
-                    "signature_id": candidate["name"],
-                    "min_size": 2,
-                    "max_size": max_size,
-                    "max_models_per_size": 10,
-                })
-                candidate["model_spectrum"] = model_result.get("spectrum", {})
-                candidate["total_models"] = model_result.get("total_models", 0)
-                candidate["sizes_with_models"] = model_result.get("sizes_with_models", [])
-                model_results.append(model_result)
-            except Exception:
-                pass
+        if top_n > 0:
+            self._log(
+                f"Checking models for top {top_n} candidates "
+                f"(sizes 2-{max_size})..."
+            )
+
+            found_count = 0
+            empty_count = 0
+
+            for j, candidate in enumerate(all_candidates[:top_n], 1):
+                name = candidate["name"]
+                short_name = name[:45]
+                check_start = time.time()
+
+                try:
+                    model_result = self.tools.execute("check_models", {
+                        "signature_id": name,
+                        "min_size": 2,
+                        "max_size": max_size,
+                        "max_models_per_size": 10,
+                    })
+                    check_elapsed = time.time() - check_start
+
+                    spectrum = model_result.get("spectrum", {})
+                    total_models = model_result.get("total_models", 0)
+                    sizes = model_result.get("sizes_with_models", [])
+
+                    candidate["model_spectrum"] = spectrum
+                    candidate["total_models"] = total_models
+                    candidate["sizes_with_models"] = sizes
+                    model_results.append(model_result)
+
+                    if total_models > 0:
+                        found_count += 1
+                        # Highlight interesting spectra
+                        sizes_str = ",".join(str(s) for s in sorted(sizes))
+                        self._log(
+                            f"  [{j:2d}/{top_n}] [green]{short_name}[/green] "
+                            f"sizes={{{sizes_str}}} "
+                            f"models={total_models} "
+                            f"[dim]({check_elapsed:.1f}s)[/dim]"
+                        )
+                    else:
+                        empty_count += 1
+                        self._log(
+                            f"  [{j:2d}/{top_n}] [dim]{short_name} "
+                            f"no models ({check_elapsed:.1f}s)[/dim]"
+                        )
+
+                except Exception as e:
+                    self._log(
+                        f"  [{j:2d}/{top_n}] [red]{short_name} error: {e}[/red]"
+                    )
+
+            self._log(
+                f"Model check: [green]{found_count} with models[/green], "
+                f"[dim]{empty_count} empty[/dim]"
+            )
 
         return {
             "total_candidates": total_generated,
