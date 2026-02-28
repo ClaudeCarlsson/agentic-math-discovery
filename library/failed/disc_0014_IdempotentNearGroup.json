@@ -1,0 +1,117 @@
+{
+  "id": "disc_0014",
+  "name": "IdempotentNearGroup",
+  "signature": {
+    "name": "Group_deform(ASSOCIATIVITY)_q(IDEM,mul)",
+    "sorts": [
+      {
+        "name": "G",
+        "description": "group elements"
+      },
+      {
+        "name": "Param",
+        "description": "deformation parameter"
+      }
+    ],
+    "operations": [
+      {
+        "name": "mul",
+        "domain": [
+          "G",
+          "G"
+        ],
+        "codomain": "G",
+        "description": "group multiplication"
+      },
+      {
+        "name": "e",
+        "domain": [],
+        "codomain": "G",
+        "description": "identity element"
+      },
+      {
+        "name": "inv",
+        "domain": [
+          "G"
+        ],
+        "codomain": "G",
+        "description": "group inverse"
+      },
+      {
+        "name": "q_mul",
+        "domain": [
+          "Param",
+          "G"
+        ],
+        "codomain": "G",
+        "description": "deformation scaling"
+      }
+    ],
+    "axioms": [
+      {
+        "kind": "IDENTITY",
+        "equation": "(x mul e) = x",
+        "operations": [
+          "mul",
+          "e"
+        ],
+        "description": ""
+      },
+      {
+        "kind": "INVERSE",
+        "equation": "(x mul inv(x)) = e",
+        "operations": [
+          "mul",
+          "inv",
+          "e"
+        ],
+        "description": ""
+      },
+      {
+        "kind": "CUSTOM",
+        "equation": "((x mul y) mul z) = (q q_mul (x mul (y mul z)))",
+        "operations": [
+          "mul",
+          "q_mul"
+        ],
+        "description": "q-deformed ASSOCIATIVITY"
+      },
+      {
+        "kind": "IDEMPOTENCE",
+        "equation": "(x mul x) = x",
+        "operations": [
+          "mul"
+        ],
+        "description": ""
+      }
+    ],
+    "description": "A set with associative operation, identity, and inverses.",
+    "derivation_chain": [
+      "Deform(ASSOCIATIVITY)",
+      "Quotient(IDEM on mul)"
+    ],
+    "fingerprint": "a5cedd85ff773bb4"
+  },
+  "derivation_chain": [
+    "Deform(ASSOCIATIVITY)",
+    "Quotient(IDEM on mul)"
+  ],
+  "score": 0.795835347951685,
+  "score_breakdown": {
+    "connectivity": 0.625,
+    "richness": 1.0,
+    "tension": 0.6666666666666666,
+    "economy": 0.8,
+    "fertility": 0.6666666666666666,
+    "has_models": 1.0,
+    "model_diversity": 0.8821630033263739,
+    "spectrum_pattern": 0.7,
+    "is_novel": 1.0,
+    "distance": 0.34285714285714286,
+    "total": 0.795835347951685
+  },
+  "notes": "Q-deformed associativity resolves the fundamental incompatibility between idempotence (x*x=x) and inverses in groups. True groups with idempotence collapse to trivial; this structure has non-trivial models for all n\u22653 but none at n=2. The gap at n=2 is provably independent of the associativity axiom \u2014 it follows from idempotence + inverse alone on a 2-element set. This structure represents a precise boundary between group collapse and near-group existence, mediated by the deformation parameter.",
+  "fingerprint": "a5cedd85ff773bb4",
+  "backtest_status": "FAIL",
+  "backtest_reason": "no models found (original had models)"
+}

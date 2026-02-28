@@ -46,6 +46,7 @@ class ModelSpectrum:
     signature_name: str
     spectrum: dict[int, int] = field(default_factory=dict)
     models_by_size: dict[int, list[CayleyTable]] = field(default_factory=dict)
+    timed_out_sizes: list[int] = field(default_factory=list)
 
     def sizes_with_models(self) -> list[int]:
         return sorted(k for k, v in self.spectrum.items() if v > 0)
@@ -55,6 +56,9 @@ class ModelSpectrum:
 
     def is_empty(self) -> bool:
         return self.total_models() == 0
+
+    def any_timed_out(self) -> bool:
+        return len(self.timed_out_sizes) > 0
 
     def __repr__(self) -> str:
         sizes = self.sizes_with_models()

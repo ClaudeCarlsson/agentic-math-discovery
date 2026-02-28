@@ -19,6 +19,7 @@ class LibraryManager:
         self.base_path.mkdir(parents=True, exist_ok=True)
         (self.base_path / "known").mkdir(exist_ok=True)
         (self.base_path / "discovered").mkdir(exist_ok=True)
+        (self.base_path / "failed").mkdir(exist_ok=True)
         (self.base_path / "conjectures").mkdir(exist_ok=True)
         (self.base_path / "reports").mkdir(exist_ok=True)
 
@@ -175,6 +176,46 @@ class LibraryManager:
             if disc.get("id") == discovery_id:
                 return disc
         return None
+
+    def archive_failed(self, discovery_id: str, reason: str) -> Path | None:
+        """Move a failed discovery from discovered/ to failed/.
+
+        Annotates the JSON with failure reason and returns the new path,
+        or None if the discovery was not found.
+        """
+        discovered_dir = self.base_path / "discovered"
+        failed_dir = self.base_path / "failed"
+
+        for f in discovered_dir.glob("disc_*.json"):
+            try:
+                data = json.loads(f.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            if data.get("id") != discovery_id:
+                continue
+
+            # Annotate with failure info
+            data["backtest_status"] = "FAIL"
+            data["backtest_reason"] = reason
+
+            dest = failed_dir / f.name
+            dest.write_text(json.dumps(data, indent=2))
+            f.unlink()
+            return dest
+
+        return None
+
+    def list_failed(self) -> list[dict[str, Any]]:
+        """List all failed/archived discoveries."""
+        failed_dir = self.base_path / "failed"
+        results = []
+        for f in sorted(failed_dir.glob("*.json")):
+            try:
+                data = json.loads(f.read_text())
+                results.append(data)
+            except (json.JSONDecodeError, OSError):
+                continue
+        return results
 
 
 def _safe_name(name: str) -> str:

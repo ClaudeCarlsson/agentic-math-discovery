@@ -320,6 +320,29 @@ def inspect(ctx: click.Context, name: str, max_size: int) -> None:
     display_score(f"{name} (with models)", score)
 
 
+@main.command()
+@click.option("--max-size", default=6, help="Maximum Z3 domain size")
+@click.option("--min-score", default=0.0, help="Only backtest discoveries above this score")
+@click.option("--id", "discovery_id", default=None, help="Backtest a specific discovery by ID")
+@click.option("--dry-run", is_flag=True, help="Show what would be archived without moving files")
+@click.pass_context
+def backtest(ctx: click.Context, max_size: int, min_score: float, discovery_id: str | None, dry_run: bool) -> None:
+    """Re-verify discovered structures: check models and score reproducibility.
+
+    Failed discoveries are automatically moved to library/failed/.
+    """
+    from backtest import run_backtest
+
+    exit_code = run_backtest(
+        library_path=ctx.obj["library_path"],
+        max_size=max_size,
+        min_score=min_score,
+        discovery_id=discovery_id,
+        dry_run=dry_run,
+    )
+    sys.exit(exit_code)
+
+
 # Need to import Panel for the agent command
 from rich.panel import Panel
 

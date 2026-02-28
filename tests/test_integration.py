@@ -121,12 +121,30 @@ class TestToolExecutor:
 
         candidates = list(executor._candidates.keys())
         if candidates:
+            sig_id = candidates[0]
+
+            # Must check models first — adding without models should fail
             result = executor.execute("add_to_library", {
-                "signature_id": candidates[0],
+                "signature_id": sig_id,
                 "name": "TestDiscovery",
                 "notes": "A test discovery from integration tests",
             })
-            assert result.get("status") == "added"
+            assert "error" in result, "Should require check_models before add"
+
+            # Now check models, then add
+            executor.execute("check_models", {
+                "signature_id": sig_id,
+                "min_size": 2,
+                "max_size": 4,
+            })
+            spectrum = executor._spectra.get(sig_id)
+            if spectrum and spectrum.total_models() > 0:
+                result = executor.execute("add_to_library", {
+                    "signature_id": sig_id,
+                    "name": "TestDiscovery",
+                    "notes": "A test discovery from integration tests",
+                })
+                assert result.get("status") == "added"
 
 
 class TestZ3Integration:

@@ -314,7 +314,19 @@ class ToolExecutor:
         if not sig:
             return {"error": f"Candidate '{sig_id}' not found in current session"}
 
+        # Require model verification before saving
         spectrum = self._spectra.get(sig_id)
+        if spectrum is None:
+            return {
+                "error": f"No model check results for '{sig_id}'. "
+                "Call check_models first before adding to library."
+            }
+        if spectrum.total_models() == 0:
+            return {
+                "error": f"'{sig_id}' has no finite models. "
+                "Only structures with verified models can be added."
+            }
+
         known_fps = set(self.library.all_fingerprints())
         score = self.scorer.score(sig, spectrum, known_fps)
 

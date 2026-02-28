@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from src.core.ast_nodes import App, Const, Equation, Expr, Var
+from src.core.ast_nodes import App, Const, Equation, Expr, Var, parse_equation
 
 
 class AxiomKind(str, Enum):
@@ -156,6 +156,45 @@ class Signature:
             "derivation_chain": self.derivation_chain,
             "fingerprint": self.fingerprint(),
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Signature:
+        """Reconstruct a Signature from its to_dict() representation.
+
+        Parses serialized equation strings back into AST objects.
+        """
+        sorts = [Sort(s["name"], s.get("description", "")) for s in data.get("sorts", [])]
+
+        operations = [
+            Operation(
+                op["name"],
+                op["domain"],
+                op["codomain"],
+                op.get("description", ""),
+            )
+            for op in data.get("operations", [])
+        ]
+
+        # Identify constants (0-arity ops) and all op names for the parser
+        constants = {op.name for op in operations if op.arity == 0}
+        op_names = {op.name for op in operations}
+
+        axioms = []
+        for ax_data in data.get("axioms", []):
+            kind = AxiomKind(ax_data["kind"])
+            equation = parse_equation(ax_data["equation"], constants, op_names)
+            ops = ax_data.get("operations", [])
+            description = ax_data.get("description", "")
+            axioms.append(Axiom(kind, equation, ops, description))
+
+        return cls(
+            name=data.get("name", ""),
+            sorts=sorts,
+            operations=operations,
+            axioms=axioms,
+            description=data.get("description", ""),
+            derivation_chain=data.get("derivation_chain", []),
+        )
 
     def __repr__(self) -> str:
         sorts = ", ".join(s.name for s in self.sorts)
