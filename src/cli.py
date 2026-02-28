@@ -163,7 +163,8 @@ def explore(
 
 
 @main.command()
-@click.option("--model", default="claude-sonnet-4-6", help="LLM model to use")
+@click.option("--model", default="claude-opus-4-6", help="Claude model (e.g. claude-opus-4-6, opus, sonnet)")
+@click.option("--effort", default="high", type=click.Choice(["low", "medium", "high"]), help="Thinking effort level")
 @click.option("--cycles", default=5, help="Number of research cycles")
 @click.option("--goal", default="Explore broadly: find novel algebraic structures", help="Research goal")
 @click.option("--depth", default=2, help="Exploration depth per cycle")
@@ -173,13 +174,17 @@ def explore(
 def agent(
     ctx: click.Context,
     model: str,
+    effort: str,
     cycles: int,
     goal: str,
     depth: int,
     max_size: int,
     base: tuple[str, ...],
 ) -> None:
-    """Run the LLM-driven research agent."""
+    """Run the Claude CLI-driven research agent.
+
+    Requires: claude CLI (npm install -g @anthropic-ai/claude-code)
+    """
     from src.agent.controller import AgentConfig, AgentController
     from src.library.manager import LibraryManager
     from src.utils.display import display_cycle_report
@@ -188,6 +193,7 @@ def agent(
 
     config = AgentConfig(
         model=model,
+        effort=effort,
         max_cycles=cycles,
         goal=goal,
         explore_depth=depth,
@@ -198,6 +204,7 @@ def agent(
     console.print(Panel(
         f"[bold]Mathematical Discovery Agent[/bold]\n\n"
         f"Model: {config.model}\n"
+        f"Effort: {config.effort}\n"
         f"Goal: {config.goal}\n"
         f"Cycles: {cycles}\n"
         f"Base structures: {config.base_structures}\n"

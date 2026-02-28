@@ -43,7 +43,7 @@ python3 run.py list-structures
 python3 run.py explore --base Group --depth 1 --top 10
 python3 run.py explore --depth 2 --check-models --max-size 6
 python3 run.py inspect Semigroup --max-size 4
-python3 run.py agent --cycles 5 --goal "explore broadly"  # Needs ANTHROPIC_API_KEY
+python3 run.py agent --cycles 5 --goal "explore broadly"  # Needs claude CLI
 ```
 
 ## Common Development Tasks
@@ -63,5 +63,5 @@ Add an entry to `AxiomKind` enum in `src/core/signature.py` and optionally a `ma
 ## Dependencies
 
 Core: `click`, `rich`, `pydantic`, `networkx`, `numpy`, `z3-solver`
-Agent: `anthropic`
+Agent: Claude Code CLI (`npm install -g @anthropic-ai/claude-code`)
 Dev: `pytest`, `pytest-cov`, `ruff`

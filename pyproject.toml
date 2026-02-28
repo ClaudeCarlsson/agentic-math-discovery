@@ -16,7 +16,6 @@ dependencies = [
     "rich>=13.7",
     "pydantic>=2.5",
     "networkx>=3.2",
-    "anthropic>=0.40",
 ]
 
 [project.optional-dependencies]
@@ -25,8 +24,8 @@ dev = [
     "pytest-cov>=4.1",
     "ruff>=0.2",
 ]
-local-llm = [
-    "openai>=1.12",
+anthropic-sdk = [
+    "anthropic>=0.40",
 ]
 
 [project.scripts]
