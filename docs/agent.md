@@ -211,7 +211,7 @@ Persist a verified discovery for future cycles.
 ### Phase 1: PLAN
 
 The controller sends Claude a prompt containing:
-- List of all known structures (14 seed + any discovered)
+- List of all known structures (15 seed + any discovered)
 - Summary of the previous cycle (candidates generated, models found, discoveries)
 - Top candidates from the last run
 - Current research goal

@@ -1,8 +1,8 @@
-# The 7 Structural Moves
+# The 8 Structural Moves
 
 This is the complete reference for the move engine that drives all structure generation
 in the system. Every candidate algebraic structure is produced by applying one of these
-seven typed transformations to an existing signature.
+eight typed transformations to an existing signature.
 
 No other mechanism creates new mathematics. If a structure exists in the system, it was
 either a seed from the known-structures library or it was produced by a finite sequence
@@ -21,6 +21,7 @@ of these moves.
 - [M5: INTERNALIZE (Single)](#m5-internalize-single)
 - [M6: TRANSFER (Pairwise)](#m6-transfer-pairwise)
 - [M7: DEFORM (Single)](#m7-deform-single)
+- [M8: SELF_DISTRIB (Single)](#m8-self_distrib-single)
 - [Composing Moves](#composing-moves)
 - [Performance Characteristics](#performance-characteristics)
 - [Implementation Reference](#implementation-reference)
@@ -63,6 +64,7 @@ human-readable description.
 | M5 INTERNALIZE| Single   | One signature         | Same + Hom-object sort          | Turn operations into data         |
 | M6 TRANSFER   | Pairwise | Two signatures        | Combined + homomorphism         | Bridge two domains                |
 | M7 DEFORM     | Single   | One signature         | Same with weakened axioms       | Parametric relaxation             |
+| M8 SELF_DISTRIB | Single   | One signature         | Same + self-distributivity      | Left self-distributivity (racks/quandles) |
 
 ---
 
@@ -599,6 +601,64 @@ parameter -- the algebraic setting in which quantum groups live.
 
 ---
 
+## M8: SELF_DISTRIB (Single)
+
+### What It Does
+
+SELF_DISTRIB adds left self-distributivity to a binary operation: `a*(b*c) = (a*b)*(a*c)`.
+This axiom is fundamental in rack and quandle theory, which arose from knot theory. The
+three axioms of a quandle (idempotence, invertibility, self-distributivity) correspond to
+the three Reidemeister moves in knot diagrams.
+
+### Input / Output
+
+- **Input**: One signature.
+- **Output**: Zero or more `MoveResult`s -- one per binary operation that does not already
+  have a self-distributivity axiom.
+
+### Algorithm
+
+```
+For each binary operation op:
+  If op does not already have a SELF_DISTRIBUTIVITY axiom:
+    - Deep-copy the signature
+    - Append Axiom(SELF_DISTRIBUTIVITY, a*(b*c) = (a*b)*(a*c), [op])
+    - Emit candidate "{name}_sd({op})"
+```
+
+### Example: SelfDistrib(Semigroup)
+
+**Semigroup**: sort `S`, operation `mul: S x S -> S`, axiom `ASSOCIATIVITY(mul)`.
+
+`mul` does not have self-distributivity, so the move adds it.
+
+**Result**: `Semigroup_sd(mul)` -- an associative, left self-distributive magma (a rack-like
+structure).
+
+```
+Before:  Semigroup  =  Sig(S, {mul/2}, {ASSOC})
+After:   Semigroup_sd(mul)  =  Sig(S, {mul/2}, {ASSOC, SELF_DISTRIB})
+```
+
+### Example: SelfDistrib(Ring)
+
+Ring has two binary operations (`add` and `mul`), so the move produces two candidates:
+- `Ring_sd(add)` -- self-distributivity on addition
+- `Ring_sd(mul)` -- self-distributivity on multiplication
+
+### When It Is Interesting
+
+- Self-distributivity combined with idempotence and invertibility produces **quandles**,
+  which classify knots via the knot quandle invariant.
+- Adding self-distributivity to an associative operation yields structures related to
+  **racks**, which have applications in Yang-Baxter equations and braided monoidal categories.
+- The model spectrum of self-distributive structures is often sparser than the base
+  structure, signaling genuine constraint.
+- At depth 2, combining SELF_DISTRIB with QUOTIENT(IDEM) on a quasigroup recovers the
+  full quandle axiomatization.
+
+---
+
 ## Composing Moves
 
 The real power of the system comes from **depth-2 and beyond**, where moves compose.
@@ -616,6 +676,7 @@ moves again to the depth-1 outputs (depth 2), and so on.
 | `Internalize(Complete(Semigroup))`     | Monoid's Hom-object: functions S -> S                    | Endomorphism monoid direction       |
 | `Abstract(Complete(A), Complete(B))`   | Shared structure of two independently completed objects   | Common algebraic core at next level |
 | `Complete(Complete(Semigroup))`        | Monoid gets inverse (= Group); Group gets op2 (= Ring)   | Rediscovers the classical hierarchy |
+| `SelfDistrib(Quotient(Quasigroup))`  | Quasigroup + idempotence + self-distributivity     | Quandle                         |
 
 The last example is particularly significant: by iterating COMPLETE twice starting from
 Semigroup, the system walks up the standard algebraic ladder:
@@ -624,15 +685,15 @@ Semigroup, the system walks up the standard algebraic ladder:
 Semigroup --Complete--> Monoid --Complete--> Group --Complete(+op2)--> Ring-like
 ```
 
-This demonstrates that the 7 moves are expressive enough to **rediscover known algebraic
+This demonstrates that the 8 moves are expressive enough to **rediscover known algebraic
 relationships** as emergent consequences of structural search.
 
 ### Depth Budget
 
-Each depth level multiplies the candidate count roughly 7-fold (5 single moves applied to
+Each depth level multiplies the candidate count roughly 8-fold (6 single moves applied to
 each candidate, plus pairwise moves across all pairs). In practice:
 
-- **Depth 0**: 14 seed structures (from `known_structures.py`)
+- **Depth 0**: 15 seed structures (from `known_structures.py`)
 - **Depth 1**: ~319 candidates
 - **Depth 2**: ~95,000 candidates
 
@@ -647,7 +708,7 @@ keep results manageable.
 
 | Depth | Input Count | Output Count | Wall Time | Notes                      |
 |-------|-------------|--------------|-----------|----------------------------|
-| 1     | 14          | ~319         | < 0.1s    | All 14 seeds               |
+| 1     | 15          | ~319         | < 0.1s    | All 15 seeds               |
 | 2     | ~319        | ~95,000      | ~10s      | Pairwise moves dominate    |
 | 3     | ~95,000     | ~50 million  | ~hours    | Rarely needed              |
 
@@ -656,17 +717,17 @@ keep results manageable.
 The move engine's time complexity is:
 
 ```
-O(5 * n  +  2 * C(n,2))  per depth level
+O(6 * n  +  2 * C(n,2))  per depth level
   ^^^^^     ^^^^^^^^^^^
   single    pairwise
   moves     moves
 ```
 
-Where `n` is the number of input signatures. The 5 single moves each iterate over
+Where `n` is the number of input signatures. The 6 single moves each iterate over
 operations within a signature (typically 1--4), so the constant factor is small. The 2
 pairwise moves (ABSTRACT and TRANSFER) iterate over all unordered pairs.
 
-Across depth levels, the growth is approximately `O(7^d * n_0^2)` where `d` is depth and
+Across depth levels, the growth is approximately `O(8^d * n_0^2)` where `d` is depth and
 `n_0` is the seed count. This is exponential in depth but polynomial within each level.
 
 ### Memory
@@ -683,11 +744,11 @@ GPU requirements.
 
 | File                                  | Role                                         |
 |---------------------------------------|----------------------------------------------|
-| `src/moves/engine.py`                | `MoveEngine` class with all 7 moves          |
+| `src/moves/engine.py`                | `MoveEngine` class with all 8 moves          |
 | `src/core/signature.py`              | `Signature`, `Sort`, `Operation`, `Axiom`     |
 | `src/core/ast_nodes.py`              | `Expr`, `Var`, `Const`, `App`, `Equation`     |
-| `src/library/known_structures.py`    | 14 seed structures                            |
-| `tests/test_moves.py`                | 15 tests covering all moves + performance     |
+| `src/library/known_structures.py`    | 15 seed structures                            |
+| `tests/test_moves.py`                | 18 tests covering all moves + performance     |
 
 ### MoveEngine API
 
@@ -710,6 +771,7 @@ engine.quotient(sig)            # -> list[MoveResult]
 engine.internalize(sig)         # -> list[MoveResult]
 engine.transfer(sig_a, sig_b)   # -> list[MoveResult]
 engine.deform(sig)              # -> list[MoveResult]
+engine.self_distrib(sig)        # -> list[MoveResult]
 ```
 
 ### MoveResult Structure
@@ -736,6 +798,7 @@ Generated signatures follow a consistent naming pattern:
 | INTERNALIZE  | `{name}_int({op})`                      | `Semigroup_int(mul)`           |
 | TRANSFER     | `Transfer({a},{b})`                     | `Transfer(Group,Ring)`         |
 | DEFORM       | `{name}_deform({kind})`                 | `Semigroup_deform(ASSOCIATIVITY)` |
+| SELF_DISTRIB | `{name}_sd({op})`                       | `Semigroup_sd(mul)`              |
 
 ### Derivation Chain
 

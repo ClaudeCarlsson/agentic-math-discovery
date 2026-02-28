@@ -10,7 +10,7 @@ This guide covers how to extend the mathematical discovery system: adding new st
 git clone https://github.com/ClaudeCarlsson/agentic-math-discovery.git
 cd agentic-math-discovery
 pip install click rich pydantic networkx numpy z3-solver pytest ruff
-python3 -m pytest tests/ -v   # verify 96 tests pass
+python3 -m pytest tests/ -v   # verify all tests pass
 ```
 
 ---
@@ -286,7 +286,7 @@ python3 -m pytest tests/ -v
 ## Pull Request Checklist
 
 - [ ] New feature has tests
-- [ ] All 96+ tests pass
+- [ ] All tests pass
 - [ ] `ruff check src/ tests/` has no errors
 - [ ] Documentation updated (relevant docs/ file)
 - [ ] CLAUDE.md updated if conventions changed

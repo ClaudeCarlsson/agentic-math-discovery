@@ -1,4 +1,4 @@
-"""The 7 structural moves for generating candidate algebraic signatures.
+"""The 8 structural moves for generating candidate algebraic signatures.
 
 Each move takes one or two signatures and produces a new candidate signature.
 These are the only ways the system generates new mathematics — constraining
@@ -16,6 +16,7 @@ from src.core.signature import (
     Axiom, AxiomKind, Operation, Signature, Sort,
     make_assoc_equation, make_comm_equation, make_identity_equation,
     make_inverse_equation, make_distrib_equation, make_idempotent_equation,
+    make_self_distrib_equation,
 )
 from src.core.ast_nodes import App, Const, Equation, Var
 
@@ -28,6 +29,7 @@ class MoveKind(str, Enum):
     INTERNALIZE = "INTERNALIZE"
     TRANSFER = "TRANSFER"
     DEFORM = "DEFORM"
+    SELF_DISTRIB = "SELF_DISTRIB"
 
 
 @dataclass
@@ -39,7 +41,7 @@ class MoveResult:
 
 
 class MoveEngine:
-    """Applies the 7 structural moves to generate candidate signatures."""
+    """Applies the 8 structural moves to generate candidate signatures."""
 
     def apply_all_moves(self, sigs: list[Signature]) -> list[MoveResult]:
         """Apply all applicable moves to a list of signatures. Returns candidates."""
@@ -51,6 +53,7 @@ class MoveEngine:
             results.extend(self.quotient(sig))
             results.extend(self.internalize(sig))
             results.extend(self.deform(sig))
+            results.extend(self.self_distrib(sig))
 
         # Pairwise moves
         for i, sig_a in enumerate(sigs):
@@ -71,6 +74,7 @@ class MoveEngine:
             MoveKind.INTERNALIZE: lambda: self._single(sigs, self.internalize),
             MoveKind.TRANSFER: lambda: self._pairwise(sigs, self.transfer),
             MoveKind.DEFORM: lambda: self._single(sigs, self.deform),
+            MoveKind.SELF_DISTRIB: lambda: self._single(sigs, self.self_distrib),
         }
         return dispatch[kind]()
 
@@ -515,6 +519,38 @@ class MoveEngine:
         return results
 
 
+    # --- M8: SELF_DISTRIB ---
+    def self_distrib(self, sig: Signature) -> list[MoveResult]:
+        """Add left self-distributivity to a binary operation.
+
+        Left self-distributivity: a*(b*c) = (a*b)*(a*c).
+        This axiom arises in rack and quandle theory (knot theory).
+        """
+        results = []
+        for op in sig.get_ops_by_arity(2):
+            already = any(
+                a.kind == AxiomKind.SELF_DISTRIBUTIVITY and op.name in a.operations
+                for a in sig.axioms
+            )
+            if not already:
+                new_sig = _deep_copy_sig(sig, f"{sig.name}_sd({op.name})")
+                new_sig.derivation_chain.append(f"SelfDistrib({op.name})")
+                new_sig.axioms.append(
+                    Axiom(
+                        AxiomKind.SELF_DISTRIBUTIVITY,
+                        make_self_distrib_equation(op.name),
+                        [op.name],
+                    )
+                )
+                results.append(MoveResult(
+                    signature=new_sig,
+                    move=MoveKind.SELF_DISTRIB,
+                    parents=[sig.name],
+                    description=f"Add self-distributivity to {op.name} in {sig.name}",
+                ))
+        return results
+
+
 def _deep_copy_sig(sig: Signature, new_name: str) -> Signature:
     """Deep copy a signature with a new name."""
     return Signature(
@@ -534,6 +570,7 @@ def _axiom_for_kind(kind: AxiomKind, op_name: str) -> Equation | None:
         AxiomKind.ASSOCIATIVITY: make_assoc_equation,
         AxiomKind.COMMUTATIVITY: make_comm_equation,
         AxiomKind.IDEMPOTENCE: make_idempotent_equation,
+        AxiomKind.SELF_DISTRIBUTIVITY: make_self_distrib_equation,
     }
     fn = dispatch.get(kind)
     return fn(op_name) if fn else None

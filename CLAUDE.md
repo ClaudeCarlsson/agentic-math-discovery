@@ -8,7 +8,7 @@ Agentic AI for Mathematical Structure Discovery — a neuro-symbolic system that
 
 ```
 src/core/           Core data structures (AST, Signature)
-src/moves/          7 structural moves (Abstract, Dualize, Complete, Quotient, Internalize, Transfer, Deform)
+src/moves/          8 structural moves (Abstract, Dualize, Complete, Quotient, Internalize, Transfer, Deform, SelfDistrib)
 src/models/         Cayley table representation and analysis
 src/solvers/        Z3, Mace4, Prover9 integration + FOL translator
 src/scoring/        10-dimensional interestingness scorer
@@ -16,7 +16,7 @@ src/agent/          LLM agent controller + tool interface
 src/library/        Known structures library + persistence manager
 src/utils/          Rich console display
 src/cli.py          Click CLI entry point
-tests/              96 tests across 6 files
+tests/              136 tests across 7 files
 docs/               Detailed documentation
 ```
 
@@ -32,7 +32,7 @@ docs/               Detailed documentation
 ## Running Tests
 
 ```bash
-python3 -m pytest tests/ -v          # All 96 tests
+python3 -m pytest tests/ -v          # All 136 tests
 python3 -m pytest tests/ -v -k z3    # Just Z3 tests
 ```
 

@@ -70,6 +70,12 @@ eq.size()       # 6
 repr(eq)        # "(x mul y) = (y mul x)"
 ```
 
+```python
+# Parsing (from string representation back to AST)
+parse_equation(s: str, constants: set[str], op_names: set[str]) -> Equation
+parse_expr(s: str, constants: set[str], op_names: set[str]) -> Expr
+```
+
 ---
 
 ### `src.core.signature`
@@ -83,7 +89,7 @@ class AxiomKind(str, Enum):
     IDEMPOTENCE         NILPOTENCE          JACOBI
     POSITIVITY          BILINEARITY         HOMOMORPHISM
     FUNCTORIALITY       ABSORPTION          MODULARITY
-    CUSTOM
+    SELF_DISTRIBUTIVITY CUSTOM
 ```
 
 #### `Sort(name: str, description: str = "")`
@@ -138,6 +144,7 @@ class Signature:
 | `get_ops_by_arity(n)` | `list[Operation]` | All operations of arity n |
 | `fingerprint()` | `str` | 16-char hex hash for novelty checking |
 | `to_dict()` | `dict` | JSON-serializable representation |
+| `from_dict(data)` | `Signature` | Reconstruct from to_dict() representation |
 
 #### Equation Builder Functions
 
@@ -165,6 +172,9 @@ make_distrib_equation(mul_name: str, add_name: str) -> Equation
 
 make_jacobi_equation(bracket_name: str) -> Equation
 # [x,[y,z]] + [y,[z,x]] = -[z,[x,y]]
+
+make_self_distrib_equation(op_name: str) -> Equation
+# a op (b op c) = (a op b) op (a op c)
 ```
 
 ---
@@ -178,7 +188,7 @@ make_jacobi_equation(bracket_name: str) -> Equation
 ```python
 class MoveKind(str, Enum):
     ABSTRACT   DUALIZE   COMPLETE   QUOTIENT
-    INTERNALIZE   TRANSFER   DEFORM
+    INTERNALIZE   TRANSFER   DEFORM   SELF_DISTRIB
 ```
 
 #### `MoveResult`
@@ -211,6 +221,7 @@ engine.quotient(sig) -> list[MoveResult]             # single
 engine.internalize(sig) -> list[MoveResult]          # single
 engine.transfer(sig_a, sig_b) -> list[MoveResult]    # pairwise
 engine.deform(sig) -> list[MoveResult]               # single
+engine.self_distrib(sig) -> list[MoveResult]         # single
 ```
 
 ---
@@ -284,6 +295,7 @@ class ModelSpectrum:
     signature_name: str
     spectrum: dict[int, int]                    # size -> model count
     models_by_size: dict[int, list[CayleyTable]]
+    timed_out_sizes: list[int] = []             # sizes where solver timed out
 
     def sizes_with_models(self) -> list[int]
     def total_models(self) -> int
@@ -346,13 +358,13 @@ class ScoreBreakdown:
 ### `src.library.known_structures`
 
 ```python
-load_all_known() -> list[Signature]          # all 14 structures
+load_all_known() -> list[Signature]          # all 15 structures
 load_by_name(name: str) -> Signature | None  # by exact name
 KNOWN_STRUCTURES: dict[str, callable]        # name -> factory function
 
 # Individual factories
 magma() semigroup() monoid() group() abelian_group()
-ring() field() lattice() quasigroup() loop()
+ring() field() lattice() quasigroup() loop() quandle()
 lie_algebra() vector_space() inner_product_space() category_sig()
 ```
 
@@ -369,6 +381,8 @@ lib.add_discovery(sig, name, notes, score) -> Path
 lib.add_conjecture(sig_name, statement, status, details) -> None
 lib.search(query, min_score=None) -> list[dict]
 lib.get_discovery(discovery_id) -> dict | None
+lib.archive_failed(discovery_id, reason) -> dict   # archive a failed discovery
+lib.list_failed() -> list[dict]                     # list archived failures
 ```
 
 ---

@@ -1,6 +1,6 @@
 # Known Algebraic Structures
 
-The system ships with 14 seed algebraic structures. These are the starting points from which all candidates are derived via structural moves.
+The system ships with 15 seed algebraic structures. These are the starting points from which all candidates are derived via structural moves.
 
 Each structure is defined as a **signature**: a collection of sorts (types), operations (typed functions), and axioms (equational laws).
 
@@ -22,6 +22,7 @@ Lattice = two commutative, associative, idempotent ops + absorption
 
 Quasigroup (Latin square: left/right division)
  └─ Loop (+identity)
+ └─ Quandle (+idempotence + self-distributivity)
 
 LieAlgebra = VectorSpace + antisymmetric bracket + Jacobi identity
 
@@ -178,7 +179,23 @@ Loops are a rich source of interesting finite structures. Moufang loops, Bol loo
 
 ---
 
-### 11. Lie Algebra
+### 11. Quandle
+
+An idempotent, left self-distributive quasigroup. Arises in knot theory -- the three quandle axioms correspond to the three Reidemeister moves.
+
+| Component | Definition |
+|-----------|-----------|
+| **Sorts** | `Q` — quandle elements |
+| **Operations** | `mul: Q × Q → Q`, `ldiv: Q × Q → Q` (left division), `rdiv: Q × Q → Q` (right division) |
+| **Axioms** | All quasigroup axioms (4 cancellation laws) + `mul(x, x) = x` — IDEMPOTENCE + `mul(a, mul(b, c)) = mul(mul(a, b), mul(a, c))` — SELF_DISTRIBUTIVITY |
+
+The knot quandle is a complete invariant of knots up to orientation. Finite quandles provide computable knot invariants.
+
+Model spectrum (Z3, up to size 8): models at sizes 3, 4, 5, 7, 8 with a gap at size 6. The gap at size 6 is an interesting structural constraint.
+
+---
+
+### 12. Lie Algebra
 
 A vector space with an antisymmetric bracket satisfying the Jacobi identity.
 
@@ -192,7 +209,7 @@ Lie algebras are the infinitesimal version of Lie groups. They arise in physics 
 
 ---
 
-### 12. VectorSpace
+### 13. VectorSpace
 
 A module over a field with vector addition and scalar multiplication.
 
@@ -206,7 +223,7 @@ The simplest multi-sorted structure in the library. Important as a base for inne
 
 ---
 
-### 13. InnerProductSpace
+### 14. InnerProductSpace
 
 A vector space equipped with a symmetric, positive-definite bilinear form.
 
@@ -222,7 +239,7 @@ Important as a starting point for RH-relevant searches: positivity + bilinear fo
 
 ---
 
-### 14. Category
+### 15. Category
 
 The signature of a category: objects, morphisms, and associative composition.
 
@@ -263,4 +280,4 @@ KNOWN_STRUCTURES["BooleanAlgebra"] = boolean_algebra
 
 ## Fingerprint Uniqueness
 
-Each structure has a fingerprint based on its shape (sort count, operation arities, axiom kinds). Most of the 14 structures have unique fingerprints, but some may collide if they share the same abstract shape. The fingerprint is used for novelty checking — candidates with fingerprints matching known structures are scored as non-novel.
+Each structure has a fingerprint based on its shape (sort count, operation arities, axiom kinds). Most of the 15 structures have unique fingerprints, but some may collide if they share the same abstract shape. The fingerprint is used for novelty checking — candidates with fingerprints matching known structures are scored as non-novel.

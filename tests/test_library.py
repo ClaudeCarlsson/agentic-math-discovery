@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.library.known_structures import (
     KNOWN_STRUCTURES, load_all_known, load_by_name,
-    group, ring, lattice, quasigroup, loop, lie_algebra,
+    group, ring, lattice, quasigroup, loop, quandle, lie_algebra,
     vector_space, inner_product_space, category_sig,
 )
 from src.library.manager import LibraryManager
@@ -49,6 +49,22 @@ class TestKnownStructures:
         la = lie_algebra()
         has_jacobi = any(a.kind.value == "JACOBI" for a in la.axioms)
         assert has_jacobi
+
+    def test_quandle_has_expected_axioms(self):
+        q = quandle()
+        axiom_kinds = [a.kind.value for a in q.axioms]
+        assert "IDEMPOTENCE" in axiom_kinds
+        assert "SELF_DISTRIBUTIVITY" in axiom_kinds
+        # 4 CUSTOM cancellation axioms from quasigroup
+        custom_count = axiom_kinds.count("CUSTOM")
+        assert custom_count == 4
+
+    def test_quandle_fingerprint_unique(self):
+        """Quandle fingerprint should differ from all other known structures."""
+        q_fp = quandle().fingerprint()
+        for name, factory in KNOWN_STRUCTURES.items():
+            if name != "Quandle":
+                assert factory().fingerprint() != q_fp, f"Quandle collides with {name}"
 
     def test_category_has_composition(self):
         cat = category_sig()

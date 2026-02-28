@@ -2,7 +2,7 @@
 
 A neuro-symbolic system for **automated theory formation** in universal algebra. It discovers structurally novel algebraic structures by combining LLM-driven strategic search with formal verification via SAT/SMT solvers.
 
-The system navigates the combinatorial space of algebraic identities using 7 predefined structural moves, grounds every candidate in finite model theory, scores results for mathematical interestingness, and uses an LLM agent to steer the search toward genuinely novel mathematics.
+The system navigates the combinatorial space of algebraic identities using 8 predefined structural moves, grounds every candidate in finite model theory, scores results for mathematical interestingness, and uses an LLM agent to steer the search toward genuinely novel mathematics.
 
 > *"The computer is incredibly fast, accurate, and stupid. Man is incredibly slow, inaccurate, and brilliant. The marriage of the two is a force beyond calculation."*
 > — attributed to Leo Cherne
@@ -11,7 +11,7 @@ The system navigates the combinatorial space of algebraic identities using 7 pre
 
 ## What This Does
 
-This system automatically discovers new algebraic structures that have never been named or studied. It starts from 14 well-known structures (groups, rings, lattices, etc.), applies systematic transformations to generate tens of thousands of candidates, then uses SMT solvers to find which ones have real finite models -- not just syntactic artifacts.
+This system automatically discovers new algebraic structures that have never been named or studied. It starts from 15 well-known structures (groups, rings, lattices, etc.), applies systematic transformations to generate tens of thousands of candidates, then uses SMT solvers to find which ones have real finite models -- not just syntactic artifacts.
 
 **Input:** A research goal in plain English (e.g., *"find structures with models only at prime sizes"*), a set of starting structures, and search parameters (depth, model size limits).
 
@@ -50,7 +50,7 @@ Conventional AI struggles with creative mathematics because LLMs can hallucinate
 
 1. **The creativity is in the combinatorics, not the model.** We exhaustively enumerate a well-defined space of structural transformations. No approximation. No heuristics beyond scoring.
 2. **Verification is complete.** If Z3/Mace4 says a structure has a model of size 7, it does. The agent can hallucinate all it wants in the planning phase — the tools catch everything.
-3. **The search space is tractable.** Depth-2 compositions of 7 moves on 14 structures = ~95,000 candidates. Exhaustively checkable on a laptop in seconds.
+3. **The search space is tractable.** Depth-2 compositions of 8 moves on 15 structures = ~95,000 candidates. Exhaustively checkable on a laptop in seconds.
 4. **Discovery ≠ proof.** We find interesting objects; proving *why* their properties hold is a separate problem for human mathematicians.
 
 ---
@@ -77,7 +77,7 @@ Conventional AI struggles with creative mathematics because LLMs can hallucinate
      │  ┌────────────┐  ┌──────────┐  ┌──────┐ │
      │  │ Structure  │  │  Model   │  │Proof │ │
      │  │  Engine    │  │ Checker  │  │Engine│ │
-     │  │ (7 moves)  │  │(Z3/Mace4)│  │(P9)  │ │
+     │  │ (8 moves)  │  │(Z3/Mace4)│  │(P9)  │ │
      │  └────────────┘  └──────────┘  └──────┘ │
      │                                          │
      │  ┌────────────┐  ┌──────────────────┐    │
@@ -118,7 +118,7 @@ pip install pytest pytest-cov ruff
 ### Your First Exploration
 
 ```bash
-# See all 14 known algebraic structures
+# See all 15 known algebraic structures
 python3 run.py list-structures
 
 # Generate candidates from Group and Ring at depth 1
@@ -161,18 +161,19 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 
 | Command | Description |
 |---------|-------------|
-| `list-structures` | Display all 14 known algebraic structures with their sorts, operations, and axioms |
+| `list-structures` | Display all 15 known algebraic structures with their sorts, operations, and axioms |
 | `explore` | Generate candidate structures using structural moves, optionally check for models |
 | `inspect <name>` | Deep-dive into a specific structure: show definition, score, and finite models |
 | `agent` | Run the LLM-driven autonomous research loop |
 | `report` | View cycle reports and discovered structures |
+| `backtest` | Verify all existing discoveries still pass model-checking and fingerprint checks |
 
 ### `explore` Options
 
 ```
 --depth N          Search depth: 1 = direct moves, 2 = compositions (default: 1)
---base NAME        Base structures to start from (repeatable; default: all 14)
---moves NAME       Specific moves to apply (repeatable; default: all 7)
+--base NAME        Base structures to start from (repeatable; default: all 15)
+--moves NAME       Specific moves to apply (repeatable; default: all 8)
 --check-models     Run Z3/Mace4 on top candidates to find finite models
 --max-size N       Maximum model size for model checking (default: 6)
 --threshold F      Minimum interestingness score to display (default: 0.0)
@@ -215,6 +216,7 @@ See [docs/agent.md](docs/agent.md) for the full agent specification.
 ```
 agentic-math-discovery/
 ├── run.py                         # CLI entry point
+├── backtest.py                    # Verification gate for existing discoveries
 ├── pyproject.toml                 # Project metadata and dependencies
 ├── src/
 │   ├── cli.py                     # Click CLI commands
@@ -222,7 +224,7 @@ agentic-math-discovery/
 │   │   ├── ast_nodes.py           #   Expression AST (Var, Const, App, Equation)
 │   │   └── signature.py           #   Algebraic signatures (Sort, Operation, Axiom)
 │   ├── moves/
-│   │   └── engine.py              # The 7 structural moves
+│   │   └── engine.py              # The 8 structural moves
 │   ├── models/
 │   │   └── cayley.py              # Cayley table representation and analysis
 │   ├── solvers/
@@ -236,11 +238,12 @@ agentic-math-discovery/
 │   │   ├── controller.py          # LLM agent loop
 │   │   └── tools.py               # Tool definitions and executor
 │   ├── library/
-│   │   ├── known_structures.py    # 14 seed algebraic structures
-│   │   └── manager.py             # Persistent storage for discoveries
+│   │   ├── known_structures.py    # 15 seed algebraic structures
+│   │   ├── manager.py             # Persistent storage for discoveries
+│   │   └── failed/               # Archive of failed discoveries
 │   └── utils/
 │       └── display.py             # Rich console output
-├── tests/                         # 96 tests across 6 test files
+├── tests/                         # 136 tests across 6 test files
 │   ├── test_core.py               # AST and signature tests
 │   ├── test_moves.py              # Structural move tests
 │   ├── test_scoring.py            # Scoring engine tests
@@ -273,11 +276,11 @@ agentic-math-discovery/
 |----------|-------------|
 | [Architecture](docs/architecture.md) | System design, data flow, component responsibilities |
 | [Getting Started](docs/getting-started.md) | Installation, first run, interpreting results |
-| [Structural Moves](docs/structural-moves.md) | Detailed specification of all 7 moves with examples |
+| [Structural Moves](docs/structural-moves.md) | Detailed specification of all 8 moves with examples |
 | [Scoring](docs/scoring.md) | How interestingness is measured across 10 dimensions |
 | [Solvers](docs/solvers.md) | Z3, Mace4, and Prover9 integration details |
 | [Agent](docs/agent.md) | LLM agent loop, tool interface, prompt engineering |
-| [Known Structures](docs/known-structures.md) | Reference for all 14 seed algebraic structures |
+| [Known Structures](docs/known-structures.md) | Reference for all 15 seed algebraic structures |
 | [API Reference](docs/api-reference.md) | Python API for programmatic use |
 | [Examples](docs/examples.md) | Worked examples and tutorials |
 | [Contributing](docs/contributing.md) | How to add moves, structures, and scoring dimensions |
@@ -287,7 +290,7 @@ agentic-math-discovery/
 ## Testing
 
 ```bash
-# Run all 96 tests
+# Run all 136 tests
 python3 -m pytest tests/ -v
 
 # Run a specific test file
@@ -299,7 +302,7 @@ python3 -m pytest tests/ --cov=src --cov-report=term-missing
 
 Test categories:
 - **test_core.py** — AST nodes, signatures, fingerprinting, equation builders
-- **test_moves.py** — All 7 structural moves, performance benchmarks
+- **test_moves.py** — All 8 structural moves, performance benchmarks
 - **test_scoring.py** — Scoring dimensions, weights, model-theoretic scores
 - **test_solvers.py** — FOL translation, Cayley tables, Z3 model finding
 - **test_library.py** — Known structures, library manager, persistence
@@ -315,7 +318,7 @@ Test categories:
 | **Recommended** | + Claude Code CLI | Full agent loop with Opus 4.6 strategic search. |
 | **Optimal** | + Mace4/Prover9 | Parallel model checking + automated theorem proving. |
 
-The core engine (structure generation, scoring, Z3 model finding) runs on any machine with Python 3.11+ and 4GB RAM. Depth-2 exploration of all 14 structures generates ~95,000 candidates in under 10 seconds.
+The core engine (structure generation, scoring, Z3 model finding) runs on any machine with Python 3.11+ and 4GB RAM. Depth-2 exploration of all 15 structures generates ~95,000 candidates in under 10 seconds.
 
 ---
 

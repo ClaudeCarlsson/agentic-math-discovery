@@ -11,7 +11,7 @@ A comprehensive specification of the system design, data flow, and component res
 - [Data Flow](#data-flow)
 - [Core Abstractions](#core-abstractions)
 - [The Discovery Pipeline](#the-discovery-pipeline)
-- [The 7 Structural Moves](#the-7-structural-moves)
+- [The 8 Structural Moves](#the-8-structural-moves)
 - [Verification Strategy](#verification-strategy)
 - [Scoring and Ranking](#scoring-and-ranking)
 - [Agent Architecture](#agent-architecture)
@@ -23,7 +23,7 @@ A comprehensive specification of the system design, data flow, and component res
 
 ## System Overview
 
-The system discovers structurally novel algebraic structures by composing seven predefined transformations over a library of known mathematical objects, then verifying the results with SAT/SMT solvers.
+The system discovers structurally novel algebraic structures by composing eight predefined transformations over a library of known mathematical objects, then verifying the results with SAT/SMT solvers.
 
 Three properties distinguish it from conventional AI-for-math approaches:
 
@@ -31,7 +31,7 @@ Three properties distinguish it from conventional AI-for-math approaches:
 
 2. **Verification is complete.** Every claim about finite models passes through Z3 or Mace4. The agent can reason loosely in its planning phase because the tools catch every error before anything enters the library.
 
-3. **The search space is tractable.** Depth-2 composition of 7 moves on 14 seed structures produces roughly 95,000 candidates. A laptop can enumerate and score them all in under 10 seconds without model checking, or check the top few hundred with Z3 in minutes.
+3. **The search space is tractable.** Depth-2 composition of 8 moves on 15 seed structures produces roughly 95,000 candidates. A laptop can enumerate and score them all in under 10 seconds without model checking, or check the top few hundred with Z3 in minutes.
 
 The architecture separates three concerns:
 
@@ -67,7 +67,7 @@ WHETHER it's valid    -->  Z3 / Mace4 / Prover9 (formal verification)
     +-------------------+     +---------------------+     +------------------+
     |    MOVE ENGINE     |     |   SOLVER LAYER      |     |  SCORING ENGINE  |
     |                    |     |                      |     |                  |
-    | 7 structural moves |     | Z3ModelFinder        |     | 10 dimensions    |
+    | 8 structural moves |     | Z3ModelFinder        |     | 10 dimensions    |
     | Single: DUALIZE    |     | Mace4Solver          |     |                  |
     |   COMPLETE         |     | Mace4Fallback        |     | Structural:      |
     |   QUOTIENT         |     | Prover9Solver        |     |   connectivity   |
@@ -100,7 +100,7 @@ WHETHER it's valid    -->  Z3 / Mace4 / Prover9 (formal verification)
                               +---------------------+
                               |  LIBRARY MANAGER     |
                               |                      |
-                              | known/    (14 seeds)  |
+                              | known/    (15 seeds)  |
                               | discovered/ (JSON)    |
                               | conjectures/ (JSON)   |
                               | reports/  (Markdown)  |
@@ -116,7 +116,7 @@ Dependencies flow downward. The Agent Controller depends on everything below it 
 A single discovery follows this path through the system:
 
 ```
-  KNOWN STRUCTURES (14 seeds)
+  KNOWN STRUCTURES (15 seeds)
          |
          |  load_all_known()
          v
@@ -159,14 +159,14 @@ A single discovery follows this path through the system:
   PERSISTENT LIBRARY            JSON files in library/discovered/
 ```
 
-The flow has two scoring passes. The first pass uses only structural dimensions (cheap, runs on all candidates). The second pass adds model-theoretic scores (expensive, runs on the top N candidates after Z3/Mace4 model checking). This two-phase approach keeps total compute manageable even at depth 2 with all 14 seed structures.
+The flow has two scoring passes. The first pass uses only structural dimensions (cheap, runs on all candidates). The second pass adds model-theoretic scores (expensive, runs on the top N candidates after Z3/Mace4 model checking). This two-phase approach keeps total compute manageable even at depth 2 with all 15 seed structures.
 
 ### Iterative Deepening
 
 For depth > 1, the output signatures of one pass become the input signatures of the next:
 
 ```
-  Depth 0:  14 known structures
+  Depth 0:  15 known structures
               |
               |  apply_all_moves()
               v
@@ -177,7 +177,7 @@ For depth > 1, the output signatures of one pass become the input signatures of 
   Depth 2:  ~95,000 candidates       ~10 seconds
 ```
 
-Each depth level applies all 7 moves (5 single-input, 2 pairwise) to every signature in the current frontier. The branching factor varies per move and per structure -- COMPLETE produces the most children (up to 4 per binary operation), while ABSTRACT only fires when two signatures share axiom kinds.
+Each depth level applies all 8 moves (5 single-input, 2 pairwise) to every signature in the current frontier. The branching factor varies per move and per structure -- COMPLETE produces the most children (up to 4 per binary operation), while ABSTRACT only fires when two signatures share axiom kinds.
 
 ---
 
@@ -237,13 +237,14 @@ Unlike the expression types, `Signature` is mutable. The move engine builds cand
 | `Operation` | `name`, `domain: tuple[str, ...]`, `codomain: str`, `description` | `domain` lists input sort names; `arity` is derived as `len(domain)`. Constants have arity 0. |
 | `Axiom` | `kind: AxiomKind`, `equation: Equation`, `operations: tuple[str, ...]`, `description` | `operations` lists which operations the axiom constrains (used for fingerprinting and move logic). |
 
-**AxiomKind** is a string enum with 16 variants:
+**AxiomKind** is a string enum with 17 variants:
 
 ```
 ASSOCIATIVITY    COMMUTATIVITY    IDENTITY       INVERSE
 DISTRIBUTIVITY   ANTICOMMUTATIVITY IDEMPOTENCE   NILPOTENCE
 JACOBI           POSITIVITY       BILINEARITY    HOMOMORPHISM
-FUNCTORIALITY    ABSORPTION       MODULARITY     CUSTOM
+FUNCTORIALITY    ABSORPTION       MODULARITY     SELF_DISTRIBUTIVITY
+CUSTOM
 ```
 
 The `CUSTOM` kind is the catch-all for axioms that do not fit a standard pattern, including deformed axioms (q-associativity, q-commutativity) and the curry-eval adjunction from INTERNALIZE.
@@ -261,6 +262,13 @@ Two signatures with the same fingerprint have the same number of sorts, the same
 - **Novelty checking:** The `is_novel` scoring dimension compares a candidate's fingerprint against all known fingerprints.
 - **Deduplication:** The library manager stores fingerprints with each discovery.
 
+### Serialization
+
+| Method | Returns | Purpose |
+|--------|---------|---------|
+| `to_dict()` | `dict` | Serialize to a JSON-compatible dictionary (includes fingerprint) |
+| `from_dict(data)` | `Signature` | Reconstruct from to_dict() representation (parses serialized equations) |
+
 ### Equation Builders
 
 The module provides seven factory functions for common axiom equations:
@@ -275,6 +283,7 @@ The module provides seven factory functions for common axiom equations:
 | `make_anticomm_equation("bracket")` | `bracket(x, y) = neg(bracket(y, x))` | Lie algebra axiom |
 | `make_distrib_equation("mul", "add")` | `mul(a, add(b, c)) = add(mul(a, b), mul(a, c))` | Ring axiom (left) |
 | `make_jacobi_equation("bracket")` | `add(bracket(x, bracket(y, z)), bracket(y, bracket(z, x))) = neg(bracket(z, bracket(x, y)))` | Lie algebra axiom |
+| `make_self_distrib_equation("mul")` | `mul(a, mul(b, c)) = mul(mul(a, b), mul(a, c))` | Quandle axiom (left self-distributivity) |
 
 These builders are used by both the known structures library (to define seed signatures) and the move engine (to construct axioms in new candidates).
 
@@ -340,9 +349,9 @@ Verified discoveries are saved to the library as JSON files. Cycle reports are s
 
 ---
 
-## The 7 Structural Moves
+## The 8 Structural Moves
 
-Each move is a method on `MoveEngine`. Five operate on a single signature; two require a pair.
+Each move is a method on `MoveEngine`. Six operate on a single signature; two require a pair.
 
 ### Single-Input Moves
 
@@ -360,6 +369,8 @@ Each move is a method on `MoveEngine`. Five operate on a single signature; two r
 
 **DEFORM** -- For each non-CUSTOM, non-POSITIVITY axiom, remove it and replace it with a q-deformed variant. For associativity: `(x*y)*z = q * (x*(y*z))`. For commutativity: `x*y = q * (y*x)`. Other axiom kinds receive a generic deformation (the original equation is kept but tagged as CUSTOM). Adds a `Param` sort and a deformation scaling operation.
 
+**SELF_DISTRIB** -- For each binary operation that does not already have self-distributivity, add the axiom `a*(b*c) = (a*b)*(a*c)`. This is left self-distributivity, the key axiom of racks and quandles from knot theory.
+
 ### Pairwise Moves
 
 **ABSTRACT** -- Given two signatures, find the set of axiom kinds present in both. Build a minimal single-sorted, single-operation signature with only those shared axiom kinds. Returns nothing if the intersection is empty. This extracts the common categorical essence of two structures.
@@ -373,6 +384,8 @@ Each move is a method on `MoveEngine`. Five operate on a single signature; two r
                      |                             |     |                |
          Constrain   |  DUALIZE   QUOTIENT         |     |  ABSTRACT      |
          (add axioms)|  (comm)    (comm/idem)      |     |  (shared kinds)|
+                     |  SELF_DISTRIB               |     |                |
+                     |  (self-distrib)             |     |                |
                      |                             |     |                |
          Enrich      |  COMPLETE  INTERNALIZE      |     |  TRANSFER      |
          (add ops)   |  (id/inv/  (Hom-objects)    |     |  (morphism)    |
@@ -534,7 +547,7 @@ The `AgentController` drives a research loop using the Claude Code CLI (`claude 
 Each cycle makes exactly 2 Claude CLI calls: one for planning, one for interpretation. Claude outputs structured JSON between XML tags (`<plan>`, `<decisions>`), which the controller parses and executes. Live progress is printed at every step — timestamped log lines, animated spinners during Claude calls, and per-candidate model checking status.
 
 The controller builds a context message for each Claude call containing:
-- The list of known structures (14 seeds)
+- The list of known structures (15 seeds)
 - Any previously discovered structures with their scores
 - Summary of the previous cycle (candidates generated, models found, discoveries)
 - The current research goal
@@ -563,7 +576,7 @@ These caches allow the `score` and `add_to_library` tools to reference candidate
 
 The agent receives a system prompt (via `--system-prompt` flag) that:
 1. Establishes its role as a mathematical research agent in universal algebra
-2. Describes the 7 available structural moves
+2. Describes the 8 available structural moves
 3. Defines what makes a structure mathematically interesting
 4. Injects the current research goal
 
@@ -584,12 +597,13 @@ The number of children produced per signature depends on the structure's shape:
 | QUOTIENT | 0 to 2B | B = binary ops. Commutativity, idempotence per op. |
 | INTERNALIZE | B | One Hom-object per binary op |
 | DEFORM | A | A = number of non-CUSTOM, non-POSITIVITY axioms |
+| SELF_DISTRIB | 0 to B | B = number of binary ops without existing self-distrib |
 | ABSTRACT | 0 or 1 per pair | 1 if shared axiom kinds exist, 0 otherwise |
 | TRANSFER | 1 per pair | Always produces exactly one result |
 
 ### Size at Each Depth
 
-With 14 seed structures and all 7 moves:
+With 15 seed structures and all 8 moves:
 
 | Depth | Candidates | Time (enumeration only) | Time (with Z3, top 20, size <= 6) |
 |-------|-----------|------------------------|-----------------------------------|
@@ -615,6 +629,8 @@ library/
   discovered/
     disc_0001_*.json   One file per discovery
     disc_0002_*.json
+  failed/
+    archived_*.json    Failed discoveries with failure reason
   conjectures/
     open.json          List of unresolved conjectures
     proved.json        Proved conjectures
@@ -627,7 +643,7 @@ library/
 ### Persistence Guarantees
 
 - **Discovery IDs** are derived from the maximum existing ID in `library/discovered/`, not from file count. Deleting a file will never cause ID collisions.
-- **Fingerprint deduplication** covers both the 14 seed structures and all previously discovered structures. `add_discovery()` checks existing discovery files for a matching fingerprint before writing and returns the existing path if a duplicate is found.
+- **Fingerprint deduplication** covers both the 15 seed structures and all previously discovered structures. `add_discovery()` checks existing discovery files for a matching fingerprint before writing and returns the existing path if a duplicate is found.
 - **Report numbering** is persistent across agent runs. `_save_report()` scans existing report files and uses `max_existing + 1`, so running the agent multiple times never overwrites earlier reports.
 - **Name sanitization** strips any `disc_NNNN_` prefix from the name argument before building filenames, preventing double-prefixed filenames like `disc_0013_disc_0009_Name.json`.
 
@@ -685,9 +701,9 @@ Each conjecture file (e.g., `proved.json`) is a JSON array:
 
 ### Known Structures (In-Code)
 
-The 14 seed structures are defined as factory functions in `src/library/known_structures.py` and registered in the `KNOWN_STRUCTURES` dictionary. They are not stored as JSON -- they are constructed fresh on each load via `load_all_known()` or `load_by_name(name)`.
+The 15 seed structures are defined as factory functions in `src/library/known_structures.py` and registered in the `KNOWN_STRUCTURES` dictionary. They are not stored as JSON -- they are constructed fresh on each load via `load_all_known()` or `load_by_name(name)`.
 
-The hierarchy of the 14 seeds:
+The hierarchy of the 15 seeds:
 
 ```
 Magma
@@ -703,6 +719,7 @@ Magma
         +-- Quasigroup (different axiomatization: cancellation laws)
               |
               +-- Loop (+ID)
+              +-- Quandle (+IDEM + SELF_DISTRIB)
 
 Ring (abelian group + mult + distrib)
   |
@@ -769,7 +786,7 @@ The solver interface is implicit (Mace4Solver, Z3ModelFinder, and Mace4Fallback 
 |------|-------------|----------------|
 | `src/core/ast_nodes.py` | 107 | Expression AST: Var, Const, App, Equation |
 | `src/core/signature.py` | 231 | Sort, Operation, Axiom, Signature, AxiomKind, equation builders |
-| `src/moves/engine.py` | 540 | MoveEngine with 7 structural moves, MoveKind enum, MoveResult |
+| `src/moves/engine.py` | 540 | MoveEngine with 8 structural moves, MoveKind enum, MoveResult |
 | `src/models/cayley.py` | 187 | CayleyTable representation and analysis, isomorphism checking |
 | `src/solvers/fol_translator.py` | 164 | Signature-to-LADR and signature-to-Z3 translation |
 | `src/solvers/z3_solver.py` | 287 | Z3-based finite model finder with ITE-chain encoding |
@@ -778,8 +795,9 @@ The solver interface is implicit (Mace4Solver, Z3ModelFinder, and Mace4Fallback 
 | `src/scoring/engine.py` | 285 | ScoringEngine, ScoreBreakdown, 10 scoring dimensions |
 | `src/agent/tools.py` | 323 | 6 tool schemas, ToolExecutor with caching |
 | `src/agent/controller.py` | 739 | AgentController, CycleReport, 4-phase research loop with live observability |
-| `src/library/known_structures.py` | 346 | 14 seed structures as factory functions |
+| `src/library/known_structures.py` | 346 | 15 seed structures as factory functions |
 | `src/library/manager.py` | 182 | LibraryManager: JSON persistence, search, fingerprint dedup |
 | `src/cli.py` | 328 | Click CLI: explore, agent, list-structures, inspect, report |
 | `src/utils/display.py` | 118 | Rich console rendering for signatures, scores, spectra |
+| `backtest.py` | ~100 | Discovery verification gate, equation parser |
 | `run.py` | 7 | Entry point |

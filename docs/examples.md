@@ -134,7 +134,33 @@ The q-deformed structures are related to quantum groups in mathematical physics.
 
 ---
 
-## Example 7: Programmatic Pipeline
+## Example 7: Self-Distributivity on Semigroup
+
+**Goal**: Apply the SELF_DISTRIB move to a Semigroup and explore the resulting rack-like structure.
+
+```bash
+python3 run.py explore --base Semigroup --moves SELF_DISTRIB --depth 1 --check-models --max-size 8
+```
+
+**What happens:**
+1. The MoveEngine examines Semigroup's binary operation `mul`
+2. `mul` does not have self-distributivity → SELF_DISTRIB adds it: `mul(a, mul(b, c)) = mul(mul(a, b), mul(a, c))`
+
+**Result:** One candidate:
+- `Semigroup_sd(mul)` — an associative, left self-distributive magma
+
+This structure combines associativity with self-distributivity. Self-distributive structures arise in knot theory (racks and quandles) and have connections to the Yang-Baxter equation.
+
+**Verification:**
+```bash
+python3 run.py inspect Semigroup_sd\(mul\) --max-size 6
+```
+
+At depth 2, combining SELF_DISTRIB with QUOTIENT(IDEM) on a Quasigroup recovers the full Quandle axiomatization — the system discovers quandles from structural search.
+
+---
+
+## Example 8: Programmatic Pipeline
 
 ```python
 from src.library.known_structures import group, semigroup
@@ -177,7 +203,7 @@ for r, score in scored[:5]:
 
 ---
 
-## Example 8: Custom Scoring Weights
+## Example 9: Custom Scoring Weights
 
 Focus the search on model-theoretic properties:
 
@@ -203,7 +229,7 @@ scorer = ScoringEngine(weights=model_weights)
 
 ---
 
-## Example 9: Finding Structures with Prime-Only Spectra
+## Example 10: Finding Structures with Prime-Only Spectra
 
 A dream scenario: a structure whose models exist only at prime sizes.
 
@@ -238,7 +264,7 @@ for r in results:
 
 ---
 
-## Example 10: Building a Discovery Report
+## Example 11: Building a Discovery Report
 
 After running the agent, review and analyze results:
 

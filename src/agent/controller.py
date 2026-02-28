@@ -77,6 +77,7 @@ mathematical concepts by exploring the space of algebraic signatures.
 - INTERNALIZE: Create Hom-objects (curry/eval)
 - TRANSFER: Create structure-preserving maps between two structures
 - DEFORM: Add a deformation parameter to an axiom (q-deformation)
+- SELF_DISTRIB: Add left self-distributivity to a binary operation
 
 ## What Makes a Structure Interesting
 
@@ -548,7 +549,7 @@ Output your plan as a JSON block between <plan> and </plan> tags:
 }}
 </plan>
 
-Available moves: ABSTRACT, DUALIZE, COMPLETE, QUOTIENT, INTERNALIZE, TRANSFER, DEFORM.
+Available moves: ABSTRACT, DUALIZE, COMPLETE, QUOTIENT, INTERNALIZE, TRANSFER, DEFORM, SELF_DISTRIB.
 You may omit "moves" to apply all moves."""
 
     def _build_interpret_prompt(

@@ -353,6 +353,7 @@ class ModelSpectrum:
     signature_name: str
     spectrum: dict[int, int]               # size -> model count
     models_by_size: dict[int, list[CayleyTable]]  # size -> model list
+    timed_out_sizes: list[int] = []    # sizes where solver timed out
 ```
 
 | Method | Returns |
@@ -360,6 +361,7 @@ class ModelSpectrum:
 | `sizes_with_models()` | Sorted list of sizes that have at least one model |
 | `total_models()` | Sum of all model counts across all sizes |
 | `is_empty()` | `True` if no models were found at any size |
+| `timed_out_sizes` | Field: list of sizes where the solver timed out before completing |
 
 ### Class API
 

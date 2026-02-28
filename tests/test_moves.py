@@ -1,4 +1,4 @@
-"""Tests for the 7 structural moves."""
+"""Tests for the 8 structural moves."""
 
 import pytest
 from src.moves.engine import MoveEngine, MoveKind
@@ -133,6 +133,36 @@ class TestDeform:
             # Should have the same number of axioms (one removed, one deformed added)
             # or more if deformation adds extra operations
             assert len(r.signature.axioms) >= n_axioms - 1
+
+
+class TestSelfDistrib:
+    def test_self_distrib_basic(self, engine):
+        """Applying self-distrib to Semigroup should produce 1 result (one binary op)."""
+        results = engine.self_distrib(semigroup())
+        assert len(results) == 1
+        r = results[0]
+        assert r.move == MoveKind.SELF_DISTRIB
+        assert any(a.kind.value == "SELF_DISTRIBUTIVITY" for a in r.signature.axioms)
+
+    def test_self_distrib_skip_existing(self, engine):
+        """Should skip if self-distributivity already present."""
+        from src.core.signature import (
+            Axiom, AxiomKind, make_self_distrib_equation,
+        )
+        sig = semigroup()
+        sig.axioms.append(
+            Axiom(AxiomKind.SELF_DISTRIBUTIVITY, make_self_distrib_equation("mul"), ["mul"])
+        )
+        results = engine.self_distrib(sig)
+        assert len(results) == 0
+
+    def test_self_distrib_multi_op(self, engine):
+        """Ring has 2 binary ops (add, mul) → should produce 2 results."""
+        results = engine.self_distrib(ring())
+        assert len(results) == 2
+        names = [r.signature.name for r in results]
+        assert any("add" in n for n in names)
+        assert any("mul" in n for n in names)
 
 
 class TestApplyAll:

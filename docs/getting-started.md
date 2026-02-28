@@ -95,7 +95,7 @@ Next, list the built-in structures:
 python3 run.py list-structures
 ```
 
-This should print 14 known algebraic structures with their sorts, operations, and axioms. If it runs without errors, your core dependencies are installed correctly.
+This should print 15 known algebraic structures with their sorts, operations, and axioms. If it runs without errors, your core dependencies are installed correctly.
 
 Finally, run the test suite:
 
@@ -103,7 +103,7 @@ Finally, run the test suite:
 python3 -m pytest tests/ -v
 ```
 
-You should see 96 tests passing. If any fail, check that you have `z3-solver` installed (`pip install z3-solver`).
+You should see 136 tests passing. If any fail, check that you have `z3-solver` installed (`pip install z3-solver`).
 
 ---
 
@@ -168,12 +168,12 @@ python3 run.py explore --base Semigroup --base Group --depth 1 --top 10
 This tells the system:
 
 - Start from **Semigroup** and **Group** as base structures
-- Apply all 7 structural moves once (`--depth 1`)
+- Apply all 8 structural moves once (`--depth 1`)
 - Show the top 10 candidates by interestingness score
 
 ### What "depth 1" means
 
-At depth 1, each of the 7 structural moves is applied once to each base structure:
+At depth 1, each of the 8 structural moves is applied once to each base structure:
 
 | Move | What it does |
 |------|-------------|
@@ -184,8 +184,9 @@ At depth 1, each of the 7 structural moves is applied once to each base structur
 | **INTERNALIZE** | Turn an operation into a first-class sort (Hom-objects) |
 | **TRANSFER** | Combine two structures with a homomorphism between them |
 | **DEFORM** | Weaken an axiom with a deformation parameter (q-analogs) |
+| **SELF_DISTRIB** | Add left self-distributivity to a binary operation |
 
-Five moves (DUALIZE, COMPLETE, QUOTIENT, INTERNALIZE, DEFORM) apply to each structure individually. Two moves (ABSTRACT, TRANSFER) apply to pairs of structures. With 2 base structures, depth 1 typically produces a few dozen candidates.
+Six moves (DUALIZE, COMPLETE, QUOTIENT, INTERNALIZE, DEFORM, SELF_DISTRIB) apply to each structure individually. Two moves (ABSTRACT, TRANSFER) apply to pairs of structures. With 2 base structures, depth 1 typically produces a few dozen candidates.
 
 ### How to read the results table
 
@@ -343,9 +344,9 @@ python3 run.py explore --depth 2 --base Semigroup
 
 ### What depth 2 means
 
-At depth 1, the 7 structural moves are applied directly to the base structures. At depth 2, the results from depth 1 become the *new* base structures, and all 7 moves are applied again.
+At depth 1, the 8 structural moves are applied directly to the base structures. At depth 2, the results from depth 1 become the *new* base structures, and all 8 moves are applied again.
 
-This is where it gets interesting. A single Semigroup at depth 1 might produce 10 candidates. At depth 2, each of those 10 becomes a base for another round, potentially producing 100+ candidates. With all 14 known structures as bases, depth 2 generates roughly 95,000 candidates.
+This is where it gets interesting. A single Semigroup at depth 1 might produce 10 candidates. At depth 2, each of those 10 becomes a base for another round, potentially producing 100+ candidates. With all 15 known structures as bases, depth 2 generates roughly 95,000 candidates.
 
 ```
 Depth 1: Semigroup  -->  [A, B, C, D, ...]     (a few dozen)
@@ -472,7 +473,7 @@ Now that you have the basics, explore the detailed documentation:
 
 | Document | What you will learn |
 |----------|-------------------|
-| [Structural Moves](structural-moves.md) | How each of the 7 moves transforms a signature, with before/after examples |
+| [Structural Moves](structural-moves.md) | How each of the 8 moves transforms a signature, with before/after examples |
 | [Scoring](scoring.md) | The 10 interestingness dimensions, their weights, and why each matters |
 | [Examples](examples.md) | Worked examples: discovering commutative semigroups, q-deformed groups, and more |
 | [Contributing](contributing.md) | How to add new structures, moves, scoring dimensions, and solvers |
@@ -482,7 +483,7 @@ For deeper architectural understanding:
 | Document | What you will learn |
 |----------|-------------------|
 | [Architecture](architecture.md) | System design, data flow between components, and design decisions |
-| [Known Structures](known-structures.md) | Reference for all 14 seed algebraic structures in the library |
+| [Known Structures](known-structures.md) | Reference for all 15 seed algebraic structures in the library |
 | [Solvers](solvers.md) | How Z3, Mace4, and Prover9 are integrated and when each is used |
 | [Agent](agent.md) | The LLM agent's prompt, tool interface, and multi-turn cycle design |
 | [API Reference](api-reference.md) | Python API for programmatic use outside the CLI |

@@ -8,7 +8,7 @@ from src.core.signature import (
     Axiom, AxiomKind, Operation, Signature, Sort,
     make_assoc_equation, make_comm_equation, make_identity_equation,
     make_inverse_equation, make_distrib_equation, make_idempotent_equation,
-    make_anticomm_equation, make_jacobi_equation,
+    make_anticomm_equation, make_jacobi_equation, make_self_distrib_equation,
 )
 
 
@@ -211,6 +211,30 @@ def loop() -> Signature:
     return sig
 
 
+def quandle() -> Signature:
+    """Quandle: idempotent, self-distributive quasigroup.
+
+    Arises in knot theory. The three axioms correspond to the three
+    Reidemeister moves.
+    """
+    sig = quasigroup()
+    sig.name = "Quandle"
+    sig.sorts = [Sort("Q", "quandle elements")]
+    sig.description = "An idempotent, left self-distributive quasigroup. Arises in knot theory."
+
+    # Add idempotence: a * a = a
+    sig.axioms.append(
+        Axiom(AxiomKind.IDEMPOTENCE, make_idempotent_equation("mul"), ["mul"])
+    )
+
+    # Add left self-distributivity: a*(b*c) = (a*b)*(a*c)
+    sig.axioms.append(
+        Axiom(AxiomKind.SELF_DISTRIBUTIVITY, make_self_distrib_equation("mul"), ["mul"])
+    )
+
+    return sig
+
+
 def lie_algebra() -> Signature:
     """Lie algebra: vector space with antisymmetric bracket satisfying Jacobi."""
     return Signature(
@@ -328,6 +352,7 @@ KNOWN_STRUCTURES: dict[str, callable] = {
     "Lattice": lattice,
     "Quasigroup": quasigroup,
     "Loop": loop,
+    "Quandle": quandle,
     "LieAlgebra": lie_algebra,
     "VectorSpace": vector_space,
     "InnerProductSpace": inner_product_space,
