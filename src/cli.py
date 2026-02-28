@@ -31,6 +31,7 @@ def main(ctx: click.Context, library_path: str) -> None:
 @main.command()
 @click.option("--depth", default=1, help="Search depth (1-3)")
 @click.option("--moves", multiple=True, help="Specific moves to apply")
+@click.option("--exclude-moves", multiple=True, help="Moves to exclude (e.g. DEFORM)")
 @click.option("--base", multiple=True, help="Base structures to start from")
 @click.option("--check-models", is_flag=True, help="Check candidates for finite models")
 @click.option("--max-size", default=6, help="Maximum model size to search")
@@ -41,6 +42,7 @@ def explore(
     ctx: click.Context,
     depth: int,
     moves: tuple[str, ...],
+    exclude_moves: tuple[str, ...],
     base: tuple[str, ...],
     check_models: bool,
     max_size: int,
@@ -79,6 +81,15 @@ def explore(
         move_kinds = [MoveKind(m) for m in moves]
     else:
         move_kinds = None
+
+    # Apply exclusions
+    if exclude_moves:
+        excluded = {MoveKind(m) for m in exclude_moves}
+        if move_kinds is None:
+            move_kinds = [m for m in MoveKind if m not in excluded]
+        else:
+            move_kinds = [m for m in move_kinds if m not in excluded]
+        console.print(f"  Excluded moves: {[m.value for m in excluded]}")
 
     # Iterative deepening
     current = bases

@@ -43,6 +43,11 @@ TOOL_SCHEMAS = [
                     "items": {"type": "string", "enum": [k.value for k in MoveKind]},
                     "description": "Which moves to apply (or omit for all)",
                 },
+                "exclude_moves": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": [k.value for k in MoveKind]},
+                    "description": "Moves to exclude from exploration (e.g. ['DEFORM'])",
+                },
                 "depth": {
                     "type": "integer",
                     "description": "Search depth (1-3)",
@@ -175,6 +180,7 @@ class ToolExecutor:
     def _explore(self, args: dict[str, Any]) -> dict[str, Any]:
         base_names = args.get("base_structures", [])
         move_names = args.get("moves")
+        exclude_names = args.get("exclude_moves")
         depth = args.get("depth", 1)
         threshold = args.get("score_threshold", 0.0)
 
@@ -188,6 +194,9 @@ class ToolExecutor:
         if not bases:
             return {"error": "No valid base structures found", "candidates": []}
 
+        # Build excluded set
+        excluded = {MoveKind(m) for m in exclude_names} if exclude_names else set()
+
         # Apply moves iteratively for depth > 1
         current = bases
         all_results: list[MoveResult] = []
@@ -197,9 +206,16 @@ class ToolExecutor:
                 results = []
                 for mk in move_names:
                     kind = MoveKind(mk)
-                    results.extend(self.move_engine.apply_move(kind, current))
+                    if kind not in excluded:
+                        results.extend(self.move_engine.apply_move(kind, current))
             else:
-                results = self.move_engine.apply_all_moves(current)
+                if excluded:
+                    results = []
+                    for kind in MoveKind:
+                        if kind not in excluded:
+                            results.extend(self.move_engine.apply_move(kind, current))
+                else:
+                    results = self.move_engine.apply_all_moves(current)
 
             all_results.extend(results)
             current = [r.signature for r in results]

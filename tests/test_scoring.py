@@ -129,6 +129,78 @@ class TestModelScores:
         assert score.spectrum_pattern > 0.7  # Prime pattern detected
 
 
+class TestSolverDifficulty:
+    def test_no_timeouts_scores_high(self, scorer):
+        """A clean spectrum with no timeouts should score well."""
+        sig = Signature(name="Test", sorts=[Sort("S")], operations=[], axioms=[])
+        spectrum = ModelSpectrum(
+            signature_name="Test",
+            spectrum={2: 1, 3: 2, 4: 3},
+            timed_out_sizes=[],
+        )
+        score = scorer.score(sig, spectrum=spectrum)
+        assert score.solver_difficulty == 1.0
+
+    def test_all_timeouts_scores_zero(self, scorer):
+        """If all sizes timed out, solver_difficulty should be 0."""
+        sig = Signature(name="Test", sorts=[Sort("S")], operations=[], axioms=[])
+        spectrum = ModelSpectrum(
+            signature_name="Test",
+            spectrum={2: 0, 3: 0, 4: 0},
+            timed_out_sizes=[2, 3, 4],
+        )
+        score = scorer.score(sig, spectrum=spectrum)
+        assert score.solver_difficulty == 0.0
+
+    def test_partial_timeouts_penalized(self, scorer):
+        """Partial timeouts should reduce solver_difficulty proportionally."""
+        sig = Signature(name="Test", sorts=[Sort("S")], operations=[], axioms=[])
+        spectrum = ModelSpectrum(
+            signature_name="Test",
+            spectrum={2: 1, 3: 2, 4: 0, 5: 0},
+            timed_out_sizes=[4, 5],
+        )
+        score = scorer.score(sig, spectrum=spectrum)
+        assert 0.0 < score.solver_difficulty < 1.0
+
+    def test_flat_spectrum_penalized(self, scorer):
+        """A trivially flat spectrum (same count at every size) should be penalized."""
+        sig = Signature(name="Test", sorts=[Sort("S")], operations=[], axioms=[])
+        spectrum = ModelSpectrum(
+            signature_name="Test",
+            spectrum={2: 5, 3: 5, 4: 5, 5: 5},
+        )
+        score = scorer.score(sig, spectrum=spectrum)
+        assert score.solver_difficulty < 1.0  # Flatness penalty applied
+
+    def test_varied_spectrum_not_penalized(self, scorer):
+        """A spectrum with varied counts should not get flatness penalty."""
+        sig = Signature(name="Test", sorts=[Sort("S")], operations=[], axioms=[])
+        spectrum = ModelSpectrum(
+            signature_name="Test",
+            spectrum={2: 1, 3: 2, 4: 5},
+        )
+        score = scorer.score(sig, spectrum=spectrum)
+        assert score.solver_difficulty == 1.0
+
+
+class TestSpectrumPatternRefined:
+    def test_consecutive_sizes_score_low(self, scorer):
+        """Consecutive sizes {2,3,4,5} should score lower than non-trivial gap."""
+        sig = Signature(name="Test", sorts=[Sort("S")], operations=[], axioms=[])
+        consecutive = ModelSpectrum(
+            signature_name="Test",
+            spectrum={2: 1, 3: 1, 4: 1, 5: 1},
+        )
+        gapped = ModelSpectrum(
+            signature_name="Test",
+            spectrum={2: 1, 4: 1, 6: 1, 8: 1},
+        )
+        consec_score = scorer.score(sig, spectrum=consecutive)
+        gapped_score = scorer.score(sig, spectrum=gapped)
+        assert gapped_score.spectrum_pattern > consec_score.spectrum_pattern
+
+
 class TestTotalScore:
     def test_total_is_weighted_sum(self, scorer):
         sig = Signature(

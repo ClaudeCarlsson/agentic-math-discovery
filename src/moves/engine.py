@@ -453,9 +453,21 @@ class MoveEngine:
         """
         results = []
 
+        # Only deform axiom kinds where q-deformation has standard mathematical
+        # meaning: ASSOCIATIVITY, COMMUTATIVITY, DISTRIBUTIVITY.
+        # Skip kinds where deformation is either meaningless or produces
+        # low-quality output that saturates solvers.
+        non_deformable = {
+            AxiomKind.CUSTOM,
+            AxiomKind.POSITIVITY,
+            AxiomKind.IDEMPOTENCE,
+            AxiomKind.ABSORPTION,
+            AxiomKind.MODULARITY,
+        }
+
         for i, axiom in enumerate(sig.axioms):
-            if axiom.kind in (AxiomKind.CUSTOM, AxiomKind.POSITIVITY):
-                continue  # Skip custom/positivity — hard to deform generically
+            if axiom.kind in non_deformable:
+                continue
 
             new_sig = _deep_copy_sig(sig, f"{sig.name}_deform({axiom.kind.value})")
             new_sig.derivation_chain.append(f"Deform({axiom.kind.value})")

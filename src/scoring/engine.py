@@ -32,6 +32,7 @@ class ScoreBreakdown:
     has_models: float = 0.0         # Does it have non-trivial finite models? (0/1)
     model_diversity: float = 0.0    # How many non-isomorphic models per size? (0-1)
     spectrum_pattern: float = 0.0   # Is the model spectrum structured? (0-1)
+    solver_difficulty: float = 0.0  # Penalizes timeout-heavy / trivially-saturated spectra (0-1)
 
     # Novelty
     is_novel: float = 0.0           # Not isomorphic to anything known? (0/1)
@@ -50,6 +51,7 @@ class ScoreBreakdown:
             "has_models": self.has_models,
             "model_diversity": self.model_diversity,
             "spectrum_pattern": self.spectrum_pattern,
+            "solver_difficulty": self.solver_difficulty,
             "is_novel": self.is_novel,
             "distance": self.distance,
             "total": self.total,
@@ -66,8 +68,9 @@ DEFAULT_WEIGHTS = {
     "has_models": 0.15,
     "model_diversity": 0.10,
     "spectrum_pattern": 0.10,
+    "solver_difficulty": 0.05,
     "is_novel": 0.15,
-    "distance": 0.10,
+    "distance": 0.05,
 }
 
 
@@ -98,6 +101,7 @@ class ScoringEngine:
             breakdown.has_models = 1.0 if not spectrum.is_empty() else 0.0
             breakdown.model_diversity = self._model_diversity(spectrum)
             breakdown.spectrum_pattern = self._spectrum_pattern(spectrum)
+            breakdown.solver_difficulty = self._solver_difficulty(spectrum)
 
         # Novelty scores
         if known_fingerprints is not None:
@@ -238,10 +242,15 @@ class ScoringEngine:
         if all(s in pow2 for s in sizes):
             score = max(score, 0.8)
 
-        # Check for arithmetic progression
+        # Check for arithmetic progression (require gap > 1 to be interesting;
+        # consecutive sizes {2,3,4,5} are uninteresting, but {2,4,6,8} is)
         diffs = [sizes[i + 1] - sizes[i] for i in range(len(sizes) - 1)]
         if len(set(diffs)) == 1:
-            score = max(score, 0.7)  # Perfect arithmetic progression
+            gap = diffs[0]
+            if gap > 1:
+                score = max(score, 0.7)  # Non-trivial arithmetic progression
+            else:
+                score = max(score, 0.3)  # Consecutive sizes — less interesting
 
         # Check for a ratio pattern (geometric-ish)
         if all(s > 0 for s in sizes) and len(sizes) >= 3:
@@ -259,6 +268,38 @@ class ScoringEngine:
                 score = max(score, 0.5)
 
         return score
+
+    def _solver_difficulty(self, spectrum: ModelSpectrum) -> float:
+        """Penalize spectra with heavy timeouts or trivial saturation.
+
+        High score (1.0) = solver completed cleanly with a non-trivial spectrum.
+        Low score (0.0) = solver timed out everywhere or spectrum is trivially flat.
+
+        This captures "solver difficulty" — structures that are either too hard
+        for the solver (all timeouts) or too easy (trivially many models at
+        every size with identical counts) score poorly.
+        """
+        sizes_checked = len(spectrum.spectrum)
+        if sizes_checked == 0:
+            return 0.0
+
+        n_timed_out = len(spectrum.timed_out_sizes)
+
+        # Penalty for timeouts: proportional to fraction of sizes that timed out
+        if n_timed_out == sizes_checked:
+            return 0.0  # All sizes timed out — no useful information
+        timeout_ratio = n_timed_out / sizes_checked
+        timeout_penalty = 1.0 - timeout_ratio  # 1.0 if no timeouts, 0.0 if all
+
+        # Penalty for trivially flat spectra (same non-zero count at every size)
+        counts = [v for v in spectrum.spectrum.values() if v > 0]
+        if len(counts) >= 3 and len(set(counts)) == 1:
+            # All non-zero counts are identical — likely trivially saturated
+            flatness_penalty = 0.7
+        else:
+            flatness_penalty = 1.0
+
+        return timeout_penalty * flatness_penalty
 
     def _distance_from_known(self, sig: Signature) -> float:
         """How structurally different is this from known structures?

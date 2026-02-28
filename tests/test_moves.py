@@ -165,6 +165,55 @@ class TestSelfDistrib:
         assert any("mul" in n for n in names)
 
 
+class TestDeformRestricted:
+    def test_deform_skips_idempotence(self, engine):
+        """DEFORM should skip IDEMPOTENCE axioms."""
+        from src.core.signature import Axiom, AxiomKind, make_idempotent_equation
+        sig = semigroup()
+        sig.axioms.append(
+            Axiom(AxiomKind.IDEMPOTENCE, make_idempotent_equation("mul"), ["mul"])
+        )
+        results = engine.deform(sig)
+        # Should only deform ASSOCIATIVITY, not IDEMPOTENCE
+        for r in results:
+            assert "IDEMPOTENCE" not in r.description
+
+    def test_deform_skips_absorption(self, engine):
+        """DEFORM should skip ABSORPTION axioms."""
+        results = engine.deform(lattice())
+        # Lattice has ABSORPTION axioms — those should be skipped
+        for r in results:
+            assert "ABSORPTION" not in r.description
+
+    def test_deform_still_handles_associativity(self, engine):
+        """DEFORM should still deform ASSOCIATIVITY."""
+        results = engine.deform(semigroup())
+        assert len(results) >= 1
+        assert any("ASSOCIATIVITY" in r.description for r in results)
+
+
+class TestExcludeMoves:
+    def test_apply_move_respects_kinds(self, engine):
+        """apply_move with specific kind should only apply that move."""
+        results = engine.apply_move(MoveKind.DUALIZE, [semigroup()])
+        for r in results:
+            assert r.move == MoveKind.DUALIZE
+
+    def test_excluded_deform_reduces_output(self, engine):
+        """Excluding DEFORM from apply_all_moves should reduce candidate count."""
+        all_results = engine.apply_all_moves([semigroup()])
+        deform_count = sum(1 for r in all_results if r.move == MoveKind.DEFORM)
+        assert deform_count > 0  # DEFORM does produce results for semigroup
+
+        # Simulate exclusion by applying all non-DEFORM moves
+        excluded = {MoveKind.DEFORM}
+        filtered_results = []
+        for kind in MoveKind:
+            if kind not in excluded:
+                filtered_results.extend(engine.apply_move(kind, [semigroup()]))
+        assert len(filtered_results) < len(all_results)
+
+
 class TestApplyAll:
     def test_apply_all_produces_candidates(self, engine):
         results = engine.apply_all_moves([semigroup(), group()])
