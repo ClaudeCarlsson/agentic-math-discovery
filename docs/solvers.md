@@ -5,7 +5,7 @@ algebraic structure in mathematical truth. No structure is accepted on the
 strength of heuristics alone -- if a claimed model exists, a solver confirms it;
 if a conjecture is asserted, a prover checks it.
 
-This document covers the four solver-layer modules and the Cayley table analysis
+This document covers the five solver-layer modules and the Cayley table analysis
 library they produce results into.
 
 ```
@@ -14,6 +14,7 @@ src/solvers/
   z3_solver.py         Primary model finder (SMT)
   mace4.py             Mace4 subprocess wrapper + fallback
   prover9.py           Theorem prover + conjecture generator
+  router.py            Smart solver routing based on signature
 
 src/models/
   cayley.py            Cayley table storage and analysis
@@ -25,6 +26,8 @@ src/models/
 fol_translator  <--  mace4  (generates LADR input)
 fol_translator  <--  prover9 (generates LADR input)
 z3_solver       <--  mace4  (Mace4Fallback delegates to Z3ModelFinder)
+z3_solver       <--  router (SmartSolverRouter uses Z3ModelFinder)
+mace4           <--  router (SmartSolverRouter uses Mace4Solver)
 cayley          <--  z3_solver, mace4 (both produce CayleyTable objects)
 ```
 
@@ -38,6 +41,7 @@ cayley          <--  z3_solver, mace4 (both produce CayleyTable objects)
 4. [Prover9 Integration](#prover9-integration)
 5. [Cayley Table Analysis](#cayley-table-analysis)
 6. [Solver Selection and Fallback](#solver-selection-and-fallback)
+7. [Smart Solver Router](#smart-solver-router)
 
 ---
 
@@ -304,6 +308,34 @@ The timeout is configurable:
 finder = Z3ModelFinder(timeout_ms=60000)  # 60 seconds
 ```
 
+### Symmetry Breaking for Heavy Signatures
+
+For signatures with O(n^3) equational axioms (self-distributivity, right self-distributivity, distributivity, Jacobi), the complete instantiation produces n^3 constraints per axiom. Combined with the n! isomorphic copies of each model (from element permutations), this causes Z3 to time out on moderate domain sizes.
+
+The Z3ModelFinder applies **lex-leader symmetry breaking** when the signature is detected as "heavy":
+
+**Detection criteria** (`_is_heavy_signature`):
+1. Must be single-sorted (multi-sorted signatures risk cross-sort conflicts)
+2. Must NOT have CUSTOM axioms (which often encode quasigroup-type cancellation laws)
+3. Must have at least one axiom of kind: SELF_DISTRIBUTIVITY, RIGHT_SELF_DISTRIBUTIVITY, DISTRIBUTIVITY, or JACOBI
+
+**The constraint**: For the first binary operation, the first row of the operation table must be non-decreasing:
+```
+op(0, 0) <= op(0, 1) <= ... <= op(0, n-1)
+```
+
+This safely prunes isomorphic models by fixing one canonical representative per isomorphism class. It is NOT applied to quasigroup-like structures (where rows must be permutations -- the only non-decreasing permutation is the identity, which would force a left identity that may not exist).
+
+The heavy axiom kinds are exported as `HEAVY_AXIOM_KINDS`:
+```python
+HEAVY_AXIOM_KINDS = frozenset({
+    AxiomKind.SELF_DISTRIBUTIVITY,
+    AxiomKind.RIGHT_SELF_DISTRIBUTIVITY,
+    AxiomKind.DISTRIBUTIVITY,
+    AxiomKind.JACOBI,
+})
+```
+
 ---
 
 ## Mace4 Integration
@@ -361,6 +393,7 @@ class ModelSpectrum:
 | `sizes_with_models()` | Sorted list of sizes that have at least one model |
 | `total_models()` | Sum of all model counts across all sizes |
 | `is_empty()` | `True` if no models were found at any size |
+| `any_timed_out()` | `True` if any size timed out |
 | `timed_out_sizes` | Field: list of sizes where the solver timed out before completing |
 
 ### Class API
@@ -430,6 +463,11 @@ exit code `-1`.
 when `solver.check()` returns `z3.unknown`, which is the typical Z3
 response when the configured timeout is exceeded. Any models found before
 the timeout are still included in the result.
+
+Both `Mace4Solver.compute_spectrum()` and `Mace4Fallback.compute_spectrum()`
+propagate per-size timeout information into `ModelSpectrum.timed_out_sizes`,
+ensuring the scoring engine can distinguish solver timeouts from proven
+emptiness.
 
 ### Mace4Fallback
 
@@ -685,35 +723,65 @@ if `size > 10` (the search would be too expensive).
 
 ## Solver Selection and Fallback
 
-The `ToolExecutor` in `src/agent/tools.py` implements the fallback chain used
-at runtime:
+### SmartSolverRouter
+
+**File:** `src/solvers/router.py`
+
+The `SmartSolverRouter` inspects each signature and routes model-finding to the best available solver. This prevents the O(n^3) constraint explosion that causes Z3 to time out on structures with heavy equational axioms (self-distributivity, Jacobi, etc.).
 
 ```python
-self.mace4 = Mace4Solver()
-if not self.mace4.is_available():
-    self.model_finder = Mace4Fallback()
-else:
-    self.model_finder = self.mace4
+class SmartSolverRouter:
+    def __init__(
+        self,
+        z3_timeout_ms: int = 30000,
+        mace4_timeout: int = 30,
+        heavy_timeout_multiplier: float = 2.0,
+    )
+    def is_available(self) -> bool
+    def classify(self, sig: Signature) -> str
+    def find_models(self, sig, domain_size, max_models=10) -> Mace4Result
+    def compute_spectrum(self, sig, min_size=2, max_size=8, max_models_per_size=10) -> ModelSpectrum
 ```
 
-The selection logic:
+### Routing Logic
 
-1. Try to use Mace4 (faster for equational theories).
-2. If Mace4 is not installed, use `Mace4Fallback`, which delegates to
-   `Z3ModelFinder`.
-3. If Z3 is also unavailable, `find_models` returns an error result.
+The router classifies each signature into one of three routes:
 
-All three classes (`Mace4Solver`, `Mace4Fallback`, `Z3ModelFinder`) return
-`Mace4Result` from `find_models` and `ModelSpectrum` from `compute_spectrum`,
-so they can be swapped without changing calling code.
+| Route | Condition | Solver | Timeout |
+|-------|-----------|--------|---------|
+| `mace4_heavy` | Has heavy axioms AND Mace4 is available | Mace4 | `mace4_timeout` |
+| `z3_heavy` | Has heavy axioms AND Mace4 unavailable | Z3 with symmetry breaking | `z3_timeout_ms * heavy_timeout_multiplier` |
+| `z3_normal` | No heavy axioms | Z3 (standard) | `z3_timeout_ms` |
 
-For Prover9, there is no Z3-based fallback. If Prover9 is not installed, the
-`prove` tool returns an error directing the user to install it.
+"Heavy axioms" are those with O(n^3) ground instances: `SELF_DISTRIBUTIVITY`, `RIGHT_SELF_DISTRIBUTIVITY`, `DISTRIBUTIVITY`, `JACOBI`.
 
-### Availability Checks
+Mace4 is preferred for heavy signatures because it has built-in symmetry breaking optimized for equational theories. When Mace4 is not installed, Z3 receives an extended timeout (default 2x) to compensate.
 
-| Solver | `is_available()` implementation |
-|--------|-------------------------------|
-| `Z3ModelFinder` | Returns the module-level `Z3_AVAILABLE` flag (set by trying `import z3`) |
-| `Mace4Solver` | Runs `mace4 --version` as a subprocess, accepts exit codes 0 or 1 |
-| `Prover9Solver` | Runs `prover9 --version` as a subprocess, accepts exit codes 0 or 1 |
+### Usage in the System
+
+Both the CLI (`src/cli.py`) and the agent tool executor (`src/agent/tools.py`) use `SmartSolverRouter` as the primary model-finding interface:
+
+```python
+from src.solvers.router import SmartSolverRouter
+
+solver = SmartSolverRouter()
+if not solver.is_available():
+    print("Neither Mace4 nor Z3 available")
+    return
+
+spectrum = solver.compute_spectrum(sig, min_size=2, max_size=6)
+```
+
+### Fallback Chain
+
+```
+1. SmartSolverRouter.classify(sig)
+   |
+   +-- heavy axioms + Mace4 available -> Mace4Solver
+   +-- heavy axioms + Mace4 unavailable -> Z3ModelFinder (extended timeout + symmetry breaking)
+   +-- normal axioms -> Z3ModelFinder (standard timeout)
+```
+
+If neither Mace4 nor Z3 is available, `SmartSolverRouter.is_available()` returns `False`.
+
+For Prover9, there is no Z3-based fallback. If Prover9 is not installed, the `prove` tool returns an error directing the user to install it.

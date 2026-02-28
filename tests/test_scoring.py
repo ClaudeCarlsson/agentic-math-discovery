@@ -2,7 +2,11 @@
 
 import pytest
 from src.scoring.engine import ScoringEngine, ScoreBreakdown
-from src.core.signature import Axiom, AxiomKind, Operation, Signature, Sort, make_assoc_equation
+from src.core.signature import (
+    Axiom, AxiomKind, Operation, Signature, Sort,
+    make_assoc_equation, make_self_distrib_equation,
+    make_right_self_distrib_equation, make_idempotent_equation,
+)
 from src.solvers.mace4 import ModelSpectrum
 
 
@@ -219,3 +223,69 @@ class TestTotalScore:
         assert d["connectivity"] == 0.5
         assert d["richness"] == 0.8
         assert d["total"] == 0.65
+
+
+class TestEconomySteeper:
+    def test_economy_steeper_past_8(self, scorer):
+        """11 components should score ~0.52 with steeper penalty."""
+        # 2 sorts + 5 ops + 4 axioms = 11 components
+        sig = Signature(
+            name="Bloated",
+            sorts=[Sort("S"), Sort("T")],
+            operations=[Operation(f"op{i}", ["S", "S"], "S") for i in range(5)],
+            axioms=[Axiom(AxiomKind.ASSOCIATIVITY, make_assoc_equation(f"op{i}"), [f"op{i}"])
+                    for i in range(4)],
+        )
+        score = scorer.score(sig)
+        # 11 components: 1.0 - (11-5)*0.08 = 1.0 - 0.48 = 0.52
+        assert abs(score.economy - 0.52) < 0.01
+
+
+class TestAxiomSynergy:
+    def test_synergy_quandle_instinct(self, scorer):
+        """IDEMPOTENCE + SELF_DISTRIBUTIVITY on same op -> 0.9."""
+        sig = Signature(
+            name="QuandleLike",
+            sorts=[Sort("S")],
+            operations=[Operation("mul", ["S", "S"], "S")],
+            axioms=[
+                Axiom(AxiomKind.IDEMPOTENCE, make_idempotent_equation("mul"), ["mul"]),
+                Axiom(AxiomKind.SELF_DISTRIBUTIVITY, make_self_distrib_equation("mul"), ["mul"]),
+            ],
+        )
+        score = scorer.score(sig)
+        assert score.axiom_synergy == 0.9
+
+    def test_synergy_full_distrib(self, scorer):
+        """Left + right self-distributivity on same op -> 1.0."""
+        sig = Signature(
+            name="FullSD",
+            sorts=[Sort("S")],
+            operations=[Operation("mul", ["S", "S"], "S")],
+            axioms=[
+                Axiom(AxiomKind.SELF_DISTRIBUTIVITY, make_self_distrib_equation("mul"), ["mul"]),
+                Axiom(AxiomKind.RIGHT_SELF_DISTRIBUTIVITY, make_right_self_distrib_equation("mul"), ["mul"]),
+            ],
+        )
+        score = scorer.score(sig)
+        assert score.axiom_synergy == 1.0
+
+    def test_synergy_none(self, scorer):
+        """Just ASSOCIATIVITY -> 0.0 synergy."""
+        sig = Signature(
+            name="JustAssoc",
+            sorts=[Sort("S")],
+            operations=[Operation("mul", ["S", "S"], "S")],
+            axioms=[
+                Axiom(AxiomKind.ASSOCIATIVITY, make_assoc_equation("mul"), ["mul"]),
+            ],
+        )
+        score = scorer.score(sig)
+        assert score.axiom_synergy == 0.0
+
+    def test_synergy_in_to_dict(self):
+        """axiom_synergy should appear in to_dict()."""
+        breakdown = ScoreBreakdown(axiom_synergy=0.9)
+        d = breakdown.to_dict()
+        assert "axiom_synergy" in d
+        assert d["axiom_synergy"] == 0.9

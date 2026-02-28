@@ -103,7 +103,7 @@ Finally, run the test suite:
 python3 -m pytest tests/ -v
 ```
 
-You should see 136 tests passing. If any fail, check that you have `z3-solver` installed (`pip install z3-solver`).
+You should see 169 tests passing. If any fail, check that you have `z3-solver` installed (`pip install z3-solver`).
 
 ---
 
@@ -184,7 +184,7 @@ At depth 1, each of the 8 structural moves is applied once to each base structur
 | **INTERNALIZE** | Turn an operation into a first-class sort (Hom-objects) |
 | **TRANSFER** | Combine two structures with a homomorphism between them |
 | **DEFORM** | Weaken an axiom with a deformation parameter (q-analogs) |
-| **SELF_DISTRIB** | Add left self-distributivity to a binary operation |
+| **SELF_DISTRIB** | Add left and/or full (left+right) self-distributivity |
 
 Six moves (DUALIZE, COMPLETE, QUOTIENT, INTERNALIZE, DEFORM, SELF_DISTRIB) apply to each structure individually. Two moves (ABSTRACT, TRANSFER) apply to pairs of structures. With 2 base structures, depth 1 typically produces a few dozen candidates.
 
@@ -215,7 +215,7 @@ Each column:
 
 ### What the score means (briefly)
 
-The score combines 10 dimensions, each normalized to [0, 1]:
+The score combines 12 dimensions, each normalized to [0, 1]:
 
 | Dimension | Measures |
 |-----------|----------|
@@ -224,9 +224,11 @@ The score combines 10 dimensions, each normalized to [0, 1]:
 | tension | Diversity of axiom kinds |
 | economy | Simplicity (smaller is better, up to a point) |
 | fertility | Potential for further constructions |
+| axiom_synergy | Known-good axiom combinations on binary ops |
 | has_models | Whether finite models exist (0 or 1) |
 | model_diversity | How many non-isomorphic models across sizes |
 | spectrum_pattern | Whether the model spectrum has mathematical structure |
+| solver_difficulty | Penalizes solver timeouts and trivially flat spectra |
 | is_novel | Not isomorphic to any known structure (0 or 1) |
 | distance | How far from the nearest known structure |
 

@@ -77,7 +77,7 @@ mathematical concepts by exploring the space of algebraic signatures.
 - INTERNALIZE: Create Hom-objects (curry/eval)
 - TRANSFER: Create structure-preserving maps between two structures
 - DEFORM: Add a deformation parameter to an axiom (q-deformation)
-- SELF_DISTRIB: Add left self-distributivity to a binary operation
+- SELF_DISTRIB: Add self-distributivity (left-only or full left+right) to a binary operation
 
 ## What Makes a Structure Interesting
 

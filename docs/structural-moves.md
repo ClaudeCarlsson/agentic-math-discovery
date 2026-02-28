@@ -41,7 +41,9 @@ A **signature** is the typed skeleton of an algebraic structure. It has three co
 Operations are classified by **arity**: nullary (constants like `e`), unary (like `inv`),
 binary (like `mul`). Axioms are tagged with a **kind** drawn from a fixed enum
 (`ASSOCIATIVITY`, `COMMUTATIVITY`, `IDENTITY`, `INVERSE`, `DISTRIBUTIVITY`,
-`IDEMPOTENCE`, `FUNCTORIALITY`, etc.).
+`ANTICOMMUTATIVITY`, `IDEMPOTENCE`, `NILPOTENCE`, `JACOBI`, `POSITIVITY`,
+`BILINEARITY`, `HOMOMORPHISM`, `FUNCTORIALITY`, `ABSORPTION`, `MODULARITY`,
+`SELF_DISTRIBUTIVITY`, `RIGHT_SELF_DISTRIBUTIVITY`, `CUSTOM`).
 
 Two signatures are considered structurally isomorphic when they have the same
 **fingerprint** -- a hash of sort count, operation arities, and axiom kinds, ignoring
@@ -64,7 +66,7 @@ human-readable description.
 | M5 INTERNALIZE| Single   | One signature         | Same + Hom-object sort          | Turn operations into data         |
 | M6 TRANSFER   | Pairwise | Two signatures        | Combined + homomorphism         | Bridge two domains                |
 | M7 DEFORM     | Single   | One signature         | Same with weakened axioms       | Parametric relaxation             |
-| M8 SELF_DISTRIB | Single   | One signature         | Same + self-distributivity      | Left self-distributivity (racks/quandles) |
+| M8 SELF_DISTRIB | Single   | One signature         | Same + left SD, or same + both left and right SD | Left and/or full self-distributivity (racks/quandles) |
 
 ---
 
@@ -605,46 +607,65 @@ parameter -- the algebraic setting in which quantum groups live.
 
 ### What It Does
 
-SELF_DISTRIB adds left self-distributivity to a binary operation: `a*(b*c) = (a*b)*(a*c)`.
-This axiom is fundamental in rack and quandle theory, which arose from knot theory. The
-three axioms of a quandle (idempotence, invertibility, self-distributivity) correspond to
-the three Reidemeister moves in knot diagrams.
+SELF_DISTRIB adds self-distributivity to binary operations. For each binary operation, it can produce up to two variants:
+
+1. **Left-only** (`_sd`): `a*(b*c) = (a*b)*(a*c)` -- left self-distributivity
+2. **Full** (`_fsd`): Both left AND right self-distributivity: `a*(b*c) = (a*b)*(a*c)` plus `(a*b)*c = (a*c)*(b*c)`
+
+Right self-distributivity was added because research revealed that BOTH left and right self-distributivity are needed for prime-power spectra. The engine can now construct structures with full distributivity in a single move.
 
 ### Input / Output
 
 - **Input**: One signature.
-- **Output**: Zero or more `MoveResult`s -- one per binary operation that does not already
-  have a self-distributivity axiom.
+- **Output**: Zero to two `MoveResult`s per binary operation:
+  - Left-only variant (if left SD not already present)
+  - Full variant (both left + right SD, adding whichever is missing)
+  - If both already present: no results for that operation
 
 ### Algorithm
 
 ```
 For each binary operation op:
-  If op does not already have a SELF_DISTRIBUTIVITY axiom:
+  has_left  = op already has SELF_DISTRIBUTIVITY axiom
+  has_right = op already has RIGHT_SELF_DISTRIBUTIVITY axiom
+
+  If has_left AND has_right: skip (nothing to add)
+
+  If NOT has_left:
     - Deep-copy the signature
     - Append Axiom(SELF_DISTRIBUTIVITY, a*(b*c) = (a*b)*(a*c), [op])
-    - Emit candidate "{name}_sd({op})"
+    - Emit candidate "{name}_sd({op})"   (left-only)
+
+  Always (unless both present):
+    - Deep-copy the signature
+    - Add SELF_DISTRIBUTIVITY if not already present
+    - Add RIGHT_SELF_DISTRIBUTIVITY: (a*b)*c = (a*c)*(b*c) if not already present
+    - Emit candidate "{name}_fsd({op})"  (full)
 ```
 
 ### Example: SelfDistrib(Semigroup)
 
 **Semigroup**: sort `S`, operation `mul: S x S -> S`, axiom `ASSOCIATIVITY(mul)`.
 
-`mul` does not have self-distributivity, so the move adds it.
+`mul` has neither left nor right self-distributivity, so the move produces both variants.
 
-**Result**: `Semigroup_sd(mul)` -- an associative, left self-distributive magma (a rack-like
-structure).
+**Result:** Two candidates:
+- `Semigroup_sd(mul)` -- associative + left self-distributive magma
+- `Semigroup_fsd(mul)` -- associative + fully self-distributive magma (both left and right)
 
 ```
 Before:  Semigroup  =  Sig(S, {mul/2}, {ASSOC})
-After:   Semigroup_sd(mul)  =  Sig(S, {mul/2}, {ASSOC, SELF_DISTRIB})
+After:   Semigroup_sd(mul)   =  Sig(S, {mul/2}, {ASSOC, SELF_DISTRIB})
+         Semigroup_fsd(mul)  =  Sig(S, {mul/2}, {ASSOC, SELF_DISTRIB, RIGHT_SELF_DISTRIB})
 ```
 
 ### Example: SelfDistrib(Ring)
 
-Ring has two binary operations (`add` and `mul`), so the move produces two candidates:
-- `Ring_sd(add)` -- self-distributivity on addition
-- `Ring_sd(mul)` -- self-distributivity on multiplication
+Ring has two binary operations (`add` and `mul`), so the move produces four candidates:
+- `Ring_sd(add)` -- left self-distributivity on addition
+- `Ring_fsd(add)` -- full self-distributivity on addition
+- `Ring_sd(mul)` -- left self-distributivity on multiplication
+- `Ring_fsd(mul)` -- full self-distributivity on multiplication
 
 ### When It Is Interesting
 
@@ -654,6 +675,9 @@ Ring has two binary operations (`add` and `mul`), so the move produces two candi
   **racks**, which have applications in Yang-Baxter equations and braided monoidal categories.
 - The model spectrum of self-distributive structures is often sparser than the base
   structure, signaling genuine constraint.
+- Full self-distributivity (left + right together) produces structures with prime-power
+  spectra, connecting to deep number-theoretic patterns. The `_fsd` variant provides this
+  in a single move.
 - At depth 2, combining SELF_DISTRIB with QUOTIENT(IDEM) on a quasigroup recovers the
   full quandle axiomatization.
 
@@ -676,7 +700,7 @@ moves again to the depth-1 outputs (depth 2), and so on.
 | `Internalize(Complete(Semigroup))`     | Monoid's Hom-object: functions S -> S                    | Endomorphism monoid direction       |
 | `Abstract(Complete(A), Complete(B))`   | Shared structure of two independently completed objects   | Common algebraic core at next level |
 | `Complete(Complete(Semigroup))`        | Monoid gets inverse (= Group); Group gets op2 (= Ring)   | Rediscovers the classical hierarchy |
-| `SelfDistrib(Quotient(Quasigroup))`  | Quasigroup + idempotence + self-distributivity     | Quandle                         |
+| `SelfDistrib(Quotient(Quasigroup))`  | Quasigroup + idempotence + self-distributivity     | Quandle (left) or Full-Distrib Quandle |
 
 The last example is particularly significant: by iterating COMPLETE twice starting from
 Semigroup, the system walks up the standard algebraic ladder:
@@ -748,7 +772,7 @@ GPU requirements.
 | `src/core/signature.py`              | `Signature`, `Sort`, `Operation`, `Axiom`     |
 | `src/core/ast_nodes.py`              | `Expr`, `Var`, `Const`, `App`, `Equation`     |
 | `src/library/known_structures.py`    | 15 seed structures                            |
-| `tests/test_moves.py`                | 18 tests covering all moves + performance     |
+| `tests/test_moves.py`                | 28 tests covering all moves + performance     |
 
 ### MoveEngine API
 
@@ -798,7 +822,7 @@ Generated signatures follow a consistent naming pattern:
 | INTERNALIZE  | `{name}_int({op})`                      | `Semigroup_int(mul)`           |
 | TRANSFER     | `Transfer({a},{b})`                     | `Transfer(Group,Ring)`         |
 | DEFORM       | `{name}_deform({kind})`                 | `Semigroup_deform(ASSOCIATIVITY)` |
-| SELF_DISTRIB | `{name}_sd({op})`                       | `Semigroup_sd(mul)`              |
+| SELF_DISTRIB | `{name}_sd({op})` or `{name}_fsd({op})` | `Semigroup_sd(mul)`, `Semigroup_fsd(mul)` |
 
 ### Derivation Chain
 

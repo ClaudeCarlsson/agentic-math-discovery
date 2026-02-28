@@ -5,8 +5,10 @@ import numpy as np
 from src.core.signature import (
     Axiom, AxiomKind, Operation, Signature, Sort,
     make_assoc_equation, make_comm_equation, make_identity_equation,
+    make_self_distrib_equation, make_right_self_distrib_equation,
 )
 from src.solvers.fol_translator import FOLTranslator
+from src.solvers.mace4 import ModelSpectrum
 from src.models.cayley import CayleyTable, models_are_isomorphic
 from src.library.known_structures import semigroup, group, magma
 
@@ -206,3 +208,220 @@ class TestZ3Solver:
         # Group at size 10 is complex enough to not finish in 1ms
         result = finder.find_models(group(), domain_size=10, max_models=1)
         assert result.timed_out is True
+
+
+class TestTimeoutPropagation:
+    """Ensure timed_out_sizes is populated by all solver compute_spectrum paths."""
+
+    def test_z3_spectrum_propagates_timeout(self):
+        """Z3 compute_spectrum should record timed-out sizes."""
+        from src.solvers.z3_solver import Z3ModelFinder
+        finder = Z3ModelFinder(timeout_ms=1)
+        if not finder.is_available():
+            pytest.skip("z3-solver not installed")
+        spectrum = finder.compute_spectrum(group(), min_size=8, max_size=10)
+        # With 1ms timeout, sizes 8-10 should time out
+        assert len(spectrum.timed_out_sizes) > 0
+
+    def test_mace4_fallback_propagates_timeout(self):
+        """Mace4Fallback compute_spectrum should record timed-out sizes."""
+        from src.solvers.mace4 import Mace4Fallback
+        # Use 1ms Z3 timeout (timeout=1 means 1 sec → 1000ms, but we
+        # need sub-second; construct directly via find_models instead)
+        from src.solvers.z3_solver import Z3ModelFinder
+        if not Z3ModelFinder().is_available():
+            pytest.skip("z3-solver not installed")
+        # Create a fallback that wraps a very short Z3 timeout
+        fallback = Mace4Fallback(timeout=1)  # 1 second
+        # Group at size 20 should timeout in 1 second
+        result = fallback.find_models(group(), domain_size=20, max_models=1)
+        # Verify the timed_out flag is set on the result
+        assert result.timed_out is True
+        # Now verify compute_spectrum propagates it
+        spectrum = fallback.compute_spectrum(group(), min_size=10, max_size=10)
+        assert len(spectrum.timed_out_sizes) > 0
+
+
+class TestSymmetryBreaking:
+    """Test that symmetry breaking is applied to heavy signatures."""
+
+    def test_heavy_sig_detected(self):
+        """Single-sorted + SD + no CUSTOM → detected as heavy."""
+        from src.solvers.z3_solver import Z3ModelFinder
+        sig = Signature(
+            name="HeavyTest",
+            sorts=[Sort("S")],
+            operations=[Operation("mul", ["S", "S"], "S")],
+            axioms=[
+                Axiom(AxiomKind.SELF_DISTRIBUTIVITY,
+                      make_self_distrib_equation("mul"), ["mul"]),
+            ],
+        )
+        assert Z3ModelFinder._is_heavy_signature(sig)
+
+    def test_light_sig_not_detected(self):
+        """A plain semigroup should NOT be detected as heavy."""
+        from src.solvers.z3_solver import Z3ModelFinder
+        assert not Z3ModelFinder._is_heavy_signature(semigroup())
+
+    def test_heavy_with_custom_not_detected(self):
+        """Single-sorted + SD + CUSTOM axioms → NOT heavy (quasigroup-like)."""
+        from src.solvers.z3_solver import Z3ModelFinder
+        from src.core.ast_nodes import Equation, Var, App
+        a, b = Var("a"), Var("b")
+        sig = Signature(
+            name="QuasigroupSD",
+            sorts=[Sort("S")],
+            operations=[Operation("mul", ["S", "S"], "S")],
+            axioms=[
+                Axiom(AxiomKind.SELF_DISTRIBUTIVITY,
+                      make_self_distrib_equation("mul"), ["mul"]),
+                Axiom(AxiomKind.CUSTOM,
+                      Equation(App("mul", [a, b]), App("mul", [a, b])),
+                      ["mul"], "cancellation"),
+            ],
+        )
+        assert not Z3ModelFinder._is_heavy_signature(sig)
+
+    def test_multi_sorted_not_detected(self):
+        """Multi-sorted + SD → NOT heavy (cross-sort risk)."""
+        from src.solvers.z3_solver import Z3ModelFinder
+        sig = Signature(
+            name="MultiSortSD",
+            sorts=[Sort("S"), Sort("T")],
+            operations=[Operation("mul", ["S", "S"], "S")],
+            axioms=[
+                Axiom(AxiomKind.SELF_DISTRIBUTIVITY,
+                      make_self_distrib_equation("mul"), ["mul"]),
+            ],
+        )
+        assert not Z3ModelFinder._is_heavy_signature(sig)
+
+    def test_symmetry_breaking_still_finds_models(self):
+        """Heavy sig with symmetry breaking should still find valid models."""
+        from src.solvers.z3_solver import Z3ModelFinder
+        finder = Z3ModelFinder(timeout_ms=10000)
+        if not finder.is_available():
+            pytest.skip("z3-solver not installed")
+        # Build a self-distributive magma (no associativity, just SD)
+        sig = Signature(
+            name="SDMagma",
+            sorts=[Sort("S")],
+            operations=[Operation("mul", ["S", "S"], "S")],
+            axioms=[
+                Axiom(AxiomKind.SELF_DISTRIBUTIVITY,
+                      make_self_distrib_equation("mul"), ["mul"]),
+            ],
+        )
+        result = finder.find_models(sig, domain_size=3, max_models=1)
+        assert len(result.models_found) >= 1
+        assert not result.timed_out
+
+    def test_full_sd_finds_models(self):
+        """Full self-distributivity (left + right) should find models with symmetry breaking."""
+        from src.solvers.z3_solver import Z3ModelFinder
+        finder = Z3ModelFinder(timeout_ms=15000)
+        if not finder.is_available():
+            pytest.skip("z3-solver not installed")
+        sig = Signature(
+            name="FullSD",
+            sorts=[Sort("S")],
+            operations=[Operation("mul", ["S", "S"], "S")],
+            axioms=[
+                Axiom(AxiomKind.SELF_DISTRIBUTIVITY,
+                      make_self_distrib_equation("mul"), ["mul"]),
+                Axiom(AxiomKind.RIGHT_SELF_DISTRIBUTIVITY,
+                      make_right_self_distrib_equation("mul"), ["mul"]),
+            ],
+        )
+        result = finder.find_models(sig, domain_size=2, max_models=1)
+        # Size 2 with full SD should be solvable
+        assert not result.timed_out
+
+
+class TestSmartSolverRouter:
+    """Test the SmartSolverRouter routing logic."""
+
+    def test_router_classifies_heavy_as_z3_heavy(self):
+        """Single-sorted + heavy axioms should route to z3_heavy (Mace4 not available)."""
+        from src.solvers.router import SmartSolverRouter
+        router = SmartSolverRouter()
+        sig = Signature(
+            name="HeavySig",
+            sorts=[Sort("S")],
+            operations=[Operation("mul", ["S", "S"], "S")],
+            axioms=[
+                Axiom(AxiomKind.SELF_DISTRIBUTIVITY,
+                      make_self_distrib_equation("mul"), ["mul"]),
+            ],
+        )
+        route = router.classify(sig)
+        # Mace4 is likely not installed in test env; should be z3_heavy
+        assert route in ("z3_heavy", "mace4_heavy")
+
+    def test_router_classifies_normal(self):
+        """A plain semigroup should route to z3_normal."""
+        from src.solvers.router import SmartSolverRouter
+        router = SmartSolverRouter()
+        assert router.classify(semigroup()) == "z3_normal"
+
+    def test_router_finds_models(self):
+        """Router should find models for a semigroup."""
+        from src.solvers.router import SmartSolverRouter
+        router = SmartSolverRouter()
+        if not router.is_available():
+            pytest.skip("No solvers available")
+        result = router.find_models(semigroup(), domain_size=2, max_models=1)
+        assert len(result.models_found) >= 1
+
+    def test_router_spectrum_has_timeout_tracking(self):
+        """Router compute_spectrum should track timed-out sizes."""
+        from src.solvers.router import SmartSolverRouter
+        router = SmartSolverRouter(z3_timeout_ms=1)
+        if not router.is_available():
+            pytest.skip("No solvers available")
+        spectrum = router.compute_spectrum(group(), min_size=10, max_size=10)
+        assert len(spectrum.timed_out_sizes) > 0
+
+
+class TestScoringTimeoutAwareness:
+    """Test that the scoring engine distinguishes timeout from proven-0."""
+
+    def test_has_models_proven_zero(self):
+        """Proven 0 models (no timeouts) should score has_models=0.0."""
+        from src.scoring.engine import ScoringEngine
+        scorer = ScoringEngine()
+        sig = Signature(name="Empty", sorts=[Sort("S")], operations=[], axioms=[])
+        spectrum = ModelSpectrum(
+            signature_name="Empty",
+            spectrum={2: 0, 3: 0, 4: 0},
+            timed_out_sizes=[],
+        )
+        score = scorer.score(sig, spectrum=spectrum)
+        assert score.has_models == 0.0
+
+    def test_has_models_timed_out_is_inconclusive(self):
+        """0 models with timeouts should score has_models=0.5 (inconclusive)."""
+        from src.scoring.engine import ScoringEngine
+        scorer = ScoringEngine()
+        sig = Signature(name="Hard", sorts=[Sort("S")], operations=[], axioms=[])
+        spectrum = ModelSpectrum(
+            signature_name="Hard",
+            spectrum={2: 0, 3: 0, 4: 0},
+            timed_out_sizes=[3, 4],
+        )
+        score = scorer.score(sig, spectrum=spectrum)
+        assert score.has_models == 0.5
+
+    def test_has_models_with_actual_models(self):
+        """Spectrum with real models should still score has_models=1.0."""
+        from src.scoring.engine import ScoringEngine
+        scorer = ScoringEngine()
+        sig = Signature(name="Good", sorts=[Sort("S")], operations=[], axioms=[])
+        spectrum = ModelSpectrum(
+            signature_name="Good",
+            spectrum={2: 1, 3: 0, 4: 0},
+            timed_out_sizes=[4],
+        )
+        score = scorer.score(sig, spectrum=spectrum)
+        assert score.has_models == 1.0

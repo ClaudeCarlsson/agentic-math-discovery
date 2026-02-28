@@ -241,18 +241,11 @@ class CVC5ModelFinder:
     def compute_spectrum(self, sig, min_size, max_size, max_models_per_size) -> ModelSpectrum: ...
 ```
 
-2. Add to the solver selection chain in `src/agent/tools.py`:
+2. Add to the solver routing logic in `src/solvers/router.py`:
 
 ```python
-class ToolExecutor:
-    def __init__(self, library):
-        self.mace4 = Mace4Solver()
-        if not self.mace4.is_available():
-            self.model_finder = CVC5ModelFinder()
-            if not self.model_finder.is_available():
-                self.model_finder = Mace4Fallback()  # Z3
-        else:
-            self.model_finder = self.mace4
+# In src/solvers/router.py, add to SmartSolverRouter:
+# or create a new router that includes CVC5 in its classification logic
 ```
 
 ---

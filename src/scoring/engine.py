@@ -27,6 +27,7 @@ class ScoreBreakdown:
     tension: float = 0.0            # Diversity of axiom kinds (0-1)
     economy: float = 0.0            # Occam's razor: smaller = better (0-1)
     fertility: float = 0.0          # Can further constructions be built? (0-1)
+    axiom_synergy: float = 0.0      # Known-good axiom combinations (0-1)
 
     # Model-theoretic quality
     has_models: float = 0.0         # Does it have non-trivial finite models? (0/1)
@@ -48,6 +49,7 @@ class ScoreBreakdown:
             "tension": self.tension,
             "economy": self.economy,
             "fertility": self.fertility,
+            "axiom_synergy": self.axiom_synergy,
             "has_models": self.has_models,
             "model_diversity": self.model_diversity,
             "spectrum_pattern": self.spectrum_pattern,
@@ -60,11 +62,12 @@ class ScoreBreakdown:
 
 # Default scoring weights
 DEFAULT_WEIGHTS = {
-    "connectivity": 0.08,
+    "connectivity": 0.05,
     "richness": 0.08,
     "tension": 0.08,
     "economy": 0.10,
-    "fertility": 0.06,
+    "fertility": 0.03,
+    "axiom_synergy": 0.06,
     "has_models": 0.15,
     "model_diversity": 0.10,
     "spectrum_pattern": 0.10,
@@ -95,10 +98,19 @@ class ScoringEngine:
         breakdown.tension = self._tension(sig)
         breakdown.economy = self._economy(sig)
         breakdown.fertility = self._fertility(sig)
+        breakdown.axiom_synergy = self._axiom_synergy(sig)
 
         # Model-theoretic scores
         if spectrum:
-            breakdown.has_models = 1.0 if not spectrum.is_empty() else 0.0
+            if not spectrum.is_empty():
+                breakdown.has_models = 1.0
+            elif spectrum.any_timed_out():
+                # Some sizes timed out — we can't confirm "no models exist".
+                # Use 0.5 (inconclusive) instead of 0.0 (proven empty).
+                breakdown.has_models = 0.5
+            else:
+                # All sizes checked cleanly, zero models: genuinely empty.
+                breakdown.has_models = 0.0
             breakdown.model_diversity = self._model_diversity(spectrum)
             breakdown.spectrum_pattern = self._spectrum_pattern(spectrum)
             breakdown.solver_difficulty = self._solver_difficulty(spectrum)
@@ -177,14 +189,14 @@ class ScoringEngine:
         """Occam's razor: simpler signatures that constrain heavily are better.
 
         Penalizes signatures with many sorts, operations, or complex axioms.
+        Steeper penalty past 5 components to push bloated structures down.
         """
         total_size = len(sig.sorts) + len(sig.operations) + len(sig.axioms)
-        # Ideal size range: 3-12 components
         if total_size <= 2:
             return 0.4
         if total_size <= 12:
-            return 1.0 - max(0, total_size - 5) * 0.04
-        return max(0.1, 1.0 - total_size * 0.04)
+            return 1.0 - max(0, total_size - 5) * 0.08
+        return max(0.1, 1.0 - total_size * 0.06)
 
     def _fertility(self, sig: Signature) -> float:
         """Can further constructions be built on this?
@@ -199,6 +211,34 @@ class ScoringEngine:
         op_score = min(n_binary / 3, 1.0)
 
         return (sort_score + op_score) / 2
+
+    def _axiom_synergy(self, sig: Signature) -> float:
+        """Detect known-good axiom combinations on binary operations.
+
+        Rewards signatures where the same binary operation carries axiom
+        combos that are mathematically rich (quandle territory, full
+        self-distributivity, etc.).
+        """
+        best = 0.0
+        for op in sig.get_ops_by_arity(2):
+            kinds_on_op = {
+                a.kind for a in sig.axioms if op.name in a.operations
+            }
+            has_idem = AxiomKind.IDEMPOTENCE in kinds_on_op
+            has_left_sd = AxiomKind.SELF_DISTRIBUTIVITY in kinds_on_op
+            has_right_sd = AxiomKind.RIGHT_SELF_DISTRIBUTIVITY in kinds_on_op
+
+            # Distributive quandle: all three
+            if has_idem and has_left_sd and has_right_sd:
+                best = max(best, 1.0)
+            # Full distributivity: left + right SD
+            elif has_left_sd and has_right_sd:
+                best = max(best, 1.0)
+            # Quandle instinct: idempotence + left SD
+            elif has_idem and has_left_sd:
+                best = max(best, 0.9)
+
+        return best
 
     def _model_diversity(self, spectrum: ModelSpectrum) -> float:
         """How many non-isomorphic models exist across sizes?"""
@@ -317,10 +357,10 @@ class ScoringEngine:
         move_kinds = set()
         for step in chain:
             for kind in ["Abstract", "Dualize", "Complete", "Quotient",
-                         "Internalize", "Transfer", "Deform"]:
+                         "Internalize", "Transfer", "Deform", "SelfDistrib"]:
                 if kind in step:
                     move_kinds.add(kind)
 
-        diversity_score = len(move_kinds) / 7
+        diversity_score = len(move_kinds) / 8
 
         return (length_score + diversity_score) / 2

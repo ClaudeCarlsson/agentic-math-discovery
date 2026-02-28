@@ -19,6 +19,7 @@ from src.scoring.engine import ScoreBreakdown, ScoringEngine
 from src.solvers.mace4 import Mace4Result, Mace4Solver, Mace4Fallback, ModelSpectrum
 from src.solvers.prover9 import ConjectureGenerator, ProofResult, Prover9Solver
 from src.solvers.z3_solver import Z3ModelFinder
+from src.solvers.router import SmartSolverRouter
 from src.core.ast_nodes import Equation
 
 
@@ -28,7 +29,7 @@ TOOL_SCHEMAS = [
         "name": "explore",
         "description": (
             "Apply structural moves to generate candidate algebraic structures. "
-            "Moves: ABSTRACT, DUALIZE, COMPLETE, QUOTIENT, INTERNALIZE, TRANSFER, DEFORM."
+            "Moves: ABSTRACT, DUALIZE, COMPLETE, QUOTIENT, INTERNALIZE, TRANSFER, DEFORM, SELF_DISTRIB."
         ),
         "input_schema": {
             "type": "object",
@@ -143,12 +144,8 @@ class ToolExecutor:
         self.move_engine = MoveEngine()
         self.scorer = ScoringEngine()
 
-        # Try Mace4 first, fall back to Z3
-        self.mace4 = Mace4Solver()
-        if not self.mace4.is_available():
-            self.model_finder = Mace4Fallback()
-        else:
-            self.model_finder = self.mace4
+        # Smart solver routing: picks Mace4 or Z3 based on signature
+        self.model_finder = SmartSolverRouter()
 
         self.prover9 = Prover9Solver()
         self.conjecture_gen = ConjectureGenerator()

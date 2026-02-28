@@ -12,8 +12,16 @@ from itertools import product
 
 import numpy as np
 
-from src.core.signature import Axiom, AxiomKind, Signature
+from src.core.signature import Axiom, AxiomKind, Operation, Signature
 from src.core.ast_nodes import App, Const, Equation, Expr, Var
+
+# Axiom kinds that produce O(n³) ground instances (3-variable equations)
+HEAVY_AXIOM_KINDS = frozenset({
+    AxiomKind.SELF_DISTRIBUTIVITY,
+    AxiomKind.RIGHT_SELF_DISTRIBUTIVITY,
+    AxiomKind.DISTRIBUTIVITY,
+    AxiomKind.JACOBI,
+})
 from src.models.cayley import CayleyTable
 from src.solvers.mace4 import Mace4Result, ModelSpectrum
 
@@ -87,6 +95,10 @@ class Z3ModelFinder:
         # Encode axioms as constraints
         for axiom in sig.axioms:
             self._encode_axiom(solver, axiom, n, op_tables, const_vars, unary_tables)
+
+        # Add symmetry breaking for heavy signatures to cut search space
+        if self._is_heavy_signature(sig):
+            self._add_symmetry_breaking(solver, sig, n, op_tables, const_vars)
 
         # Find models
         models: list[CayleyTable] = []
@@ -166,6 +178,54 @@ class Z3ModelFinder:
             if result.timed_out:
                 spectrum.timed_out_sizes.append(size)
         return spectrum
+
+    @staticmethod
+    def _is_heavy_signature(sig: Signature) -> bool:
+        """Check if a signature has O(n³) equational axioms AND is safe
+        for symmetry breaking.
+
+        Must be single-sorted and free of CUSTOM axioms (which often
+        encode quasigroup-type cancellation laws whose Latin-square
+        constraint makes first-row ordering unsound — it would force
+        a left identity that may not exist).
+        """
+        if len(sig.sorts) > 1:
+            return False  # Multi-sorted: symmetry breaking risks cross-sort conflicts
+        if any(ax.kind == AxiomKind.CUSTOM for ax in sig.axioms):
+            return False  # CUSTOM axioms (cancellation laws etc.) may interact badly
+        return any(ax.kind in HEAVY_AXIOM_KINDS for ax in sig.axioms)
+
+    @staticmethod
+    def _add_symmetry_breaking(
+        solver: "z3.Solver",
+        sig: Signature,
+        n: int,
+        op_tables: dict[str, list[list["z3.ArithRef"]]],
+        const_vars: dict[str, "z3.ArithRef"],
+    ) -> None:
+        """Add lex-leader symmetry breaking constraints.
+
+        For single-sorted signatures with a binary operation (and no
+        CUSTOM/cancellation axioms), the n! element permutations generate
+        isomorphic copies of each model. We break this by fixing the first
+        row of the first binary op to non-decreasing order:
+            op(0, 0) <= op(0, 1) <= ... <= op(0, n-1)
+
+        This safely prunes isomorphic models without excluding any
+        non-isomorphic one. NOT applied to quasigroup-like structures
+        where rows must be permutations (the only non-decreasing
+        permutation is the identity, forcing a left identity element).
+        """
+        if not op_tables:
+            return
+
+        # Pick the first binary operation for symmetry breaking
+        first_op_name = next(iter(op_tables))
+        table = op_tables[first_op_name]
+
+        # First row non-decreasing: op(0, 0) <= op(0, 1) <= ... <= op(0, n-1)
+        for j in range(n - 1):
+            solver.add(table[0][j] <= table[0][j + 1])
 
     def _encode_axiom(
         self,

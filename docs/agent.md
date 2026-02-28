@@ -130,11 +130,12 @@ Generate candidate algebraic structures by applying structural moves.
   "base_structures": ["Group", "Ring"],
   "moves": ["COMPLETE", "TRANSFER"],
   "depth": 2,
-  "score_threshold": 0.3
+  "score_threshold": 0.3,
+  "exclude_moves": ["DEFORM"]
 }
 ```
 
-**Returns**: List of scored candidates with name, move, parents, score, and structural stats.
+**Returns**: List of scored candidates with name, move, parents, score, and structural stats. Note: SELF_DISTRIB produces both left-only and full (left+right) self-distributive variants.
 
 ### 2. `check_models`
 
@@ -167,7 +168,7 @@ Attempt to prove or disprove automatically generated conjectures about a signatu
 
 ### 4. `score`
 
-Compute the full 10-dimensional interestingness score.
+Compute the full 12-dimensional interestingness score.
 
 ```json
 {
@@ -175,7 +176,7 @@ Compute the full 10-dimensional interestingness score.
 }
 ```
 
-**Returns**: All 10 score dimensions plus the weighted total.
+**Returns**: All 12 score dimensions plus the weighted total.
 
 ### 5. `search_library`
 

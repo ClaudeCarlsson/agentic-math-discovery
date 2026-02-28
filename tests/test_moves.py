@@ -137,15 +137,19 @@ class TestDeform:
 
 class TestSelfDistrib:
     def test_self_distrib_basic(self, engine):
-        """Applying self-distrib to Semigroup should produce 1 result (one binary op)."""
+        """Applying self-distrib to Semigroup should produce 2 results (left + full)."""
         results = engine.self_distrib(semigroup())
-        assert len(results) == 1
-        r = results[0]
-        assert r.move == MoveKind.SELF_DISTRIB
-        assert any(a.kind.value == "SELF_DISTRIBUTIVITY" for a in r.signature.axioms)
+        assert len(results) == 2
+        # First: left-only
+        assert results[0].move == MoveKind.SELF_DISTRIB
+        assert any(a.kind.value == "SELF_DISTRIBUTIVITY" for a in results[0].signature.axioms)
+        assert not any(a.kind.value == "RIGHT_SELF_DISTRIBUTIVITY" for a in results[0].signature.axioms)
+        # Second: full (left + right)
+        assert any(a.kind.value == "SELF_DISTRIBUTIVITY" for a in results[1].signature.axioms)
+        assert any(a.kind.value == "RIGHT_SELF_DISTRIBUTIVITY" for a in results[1].signature.axioms)
 
     def test_self_distrib_skip_existing(self, engine):
-        """Should skip if self-distributivity already present."""
+        """Left already present -> 1 result (full only, adding right)."""
         from src.core.signature import (
             Axiom, AxiomKind, make_self_distrib_equation,
         )
@@ -154,15 +158,49 @@ class TestSelfDistrib:
             Axiom(AxiomKind.SELF_DISTRIBUTIVITY, make_self_distrib_equation("mul"), ["mul"])
         )
         results = engine.self_distrib(sig)
+        assert len(results) == 1
+        # Should be the full variant (adding right)
+        assert any(a.kind.value == "RIGHT_SELF_DISTRIBUTIVITY" for a in results[0].signature.axioms)
+
+    def test_self_distrib_skip_both_existing(self, engine):
+        """Both left and right already present -> 0 results."""
+        from src.core.signature import (
+            Axiom, AxiomKind, make_self_distrib_equation,
+            make_right_self_distrib_equation,
+        )
+        sig = semigroup()
+        sig.axioms.append(
+            Axiom(AxiomKind.SELF_DISTRIBUTIVITY, make_self_distrib_equation("mul"), ["mul"])
+        )
+        sig.axioms.append(
+            Axiom(AxiomKind.RIGHT_SELF_DISTRIBUTIVITY, make_right_self_distrib_equation("mul"), ["mul"])
+        )
+        results = engine.self_distrib(sig)
         assert len(results) == 0
 
     def test_self_distrib_multi_op(self, engine):
-        """Ring has 2 binary ops (add, mul) → should produce 2 results."""
+        """Ring has 2 binary ops (add, mul) → should produce 4 results (2 per op)."""
         results = engine.self_distrib(ring())
-        assert len(results) == 2
+        assert len(results) == 4
         names = [r.signature.name for r in results]
         assert any("add" in n for n in names)
         assert any("mul" in n for n in names)
+
+    def test_right_self_distrib_equation(self):
+        """Verify right self-distributivity equation shape: (a*b)*c = (a*c)*(b*c)."""
+        from src.core.signature import make_right_self_distrib_equation
+        from src.core.ast_nodes import App, Var
+        eq = make_right_self_distrib_equation("mul")
+        # LHS: mul(mul(a, b), c)
+        assert isinstance(eq.lhs, App)
+        assert eq.lhs.op_name == "mul"
+        assert isinstance(eq.lhs.args[0], App)
+        assert eq.lhs.args[0].op_name == "mul"
+        # RHS: mul(mul(a, c), mul(b, c))
+        assert isinstance(eq.rhs, App)
+        assert eq.rhs.op_name == "mul"
+        assert isinstance(eq.rhs.args[0], App)
+        assert isinstance(eq.rhs.args[1], App)
 
 
 class TestDeformRestricted:

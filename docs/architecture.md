@@ -67,26 +67,26 @@ WHETHER it's valid    -->  Z3 / Mace4 / Prover9 (formal verification)
     +-------------------+     +---------------------+     +------------------+
     |    MOVE ENGINE     |     |   SOLVER LAYER      |     |  SCORING ENGINE  |
     |                    |     |                      |     |                  |
-    | 8 structural moves |     | Z3ModelFinder        |     | 10 dimensions    |
-    | Single: DUALIZE    |     | Mace4Solver          |     |                  |
-    |   COMPLETE         |     | Mace4Fallback        |     | Structural:      |
-    |   QUOTIENT         |     | Prover9Solver        |     |   connectivity   |
-    |   INTERNALIZE      |     | ConjectureGenerator  |     |   richness       |
-    |   DEFORM           |     | FOLTranslator        |     |   tension        |
-    | Pairwise: ABSTRACT |     |                      |     |   economy        |
-    |   TRANSFER         |     | CayleyTable          |     |   fertility      |
-    +--------+-----------+     +----------+-----------+     |                  |
+    | 8 structural moves |     | SmartSolverRouter    |     | 12 dimensions    |
+    | Single: DUALIZE    |     | Z3ModelFinder        |     |                  |
+    |   COMPLETE         |     | Mace4Solver          |     | Structural:      |
+    |   QUOTIENT         |     | Mace4Fallback        |     |   connectivity   |
+    |   INTERNALIZE      |     | Prover9Solver        |     |   richness       |
+    |   DEFORM           |     | ConjectureGenerator  |     |   tension        |
+    | Pairwise: ABSTRACT |     | FOLTranslator        |     |   economy        |
+    |   TRANSFER         |     |                      |     |   fertility      |
+    +--------+-----------+     | CayleyTable          |     |   axiom_synergy  |
+             |                 +----------+-----------+     |                  |
              |                            |                 | Model-theoretic: |
              |                            |                 |   has_models     |
-             |                            |                 |   model_diversity|
-             v                            v                 |   spectrum       |
-    +-------------------+     +---------------------+      |                  |
-    |  CORE TYPES        |     |   FINITE MODELS     |      | Novelty:         |
-    |                    |     |                      |      |   is_novel       |
-    | Signature          |     | CayleyTable          |      |   distance       |
-    |   Sort             |     |   n x n tables       |      +--------+---------+
-    |   Operation        |     |   Latin square?      |               |
-    |   Axiom            |     |   commutative?       |               |
+             v                            v                 |   model_diversity|
+    +-------------------+     +---------------------+      |   spectrum_patt. |
+    |  CORE TYPES        |     |   FINITE MODELS     |      |   solver_diff.   |
+    |                    |     |                      |      |                  |
+    | Signature          |     | CayleyTable          |      | Novelty:         |
+    |   Sort             |     |   n x n tables       |      |   is_novel       |
+    |   Operation        |     |   Latin square?      |      |   distance       |
+    |   Axiom            |     |   commutative?       |      +--------+---------+
     | Expr (AST)         |     |   identity?          |               |
     |   Var, Const, App  |     |   associative?       |               |
     |   Equation         |     |   entropy, symmetry  |               |
@@ -237,14 +237,14 @@ Unlike the expression types, `Signature` is mutable. The move engine builds cand
 | `Operation` | `name`, `domain: tuple[str, ...]`, `codomain: str`, `description` | `domain` lists input sort names; `arity` is derived as `len(domain)`. Constants have arity 0. |
 | `Axiom` | `kind: AxiomKind`, `equation: Equation`, `operations: tuple[str, ...]`, `description` | `operations` lists which operations the axiom constrains (used for fingerprinting and move logic). |
 
-**AxiomKind** is a string enum with 17 variants:
+**AxiomKind** is a string enum with 18 variants:
 
 ```
 ASSOCIATIVITY    COMMUTATIVITY    IDENTITY       INVERSE
 DISTRIBUTIVITY   ANTICOMMUTATIVITY IDEMPOTENCE   NILPOTENCE
 JACOBI           POSITIVITY       BILINEARITY    HOMOMORPHISM
 FUNCTORIALITY    ABSORPTION       MODULARITY     SELF_DISTRIBUTIVITY
-CUSTOM
+RIGHT_SELF_DISTRIBUTIVITY         CUSTOM
 ```
 
 The `CUSTOM` kind is the catch-all for axioms that do not fit a standard pattern, including deformed axioms (q-associativity, q-commutativity) and the curry-eval adjunction from INTERNALIZE.
@@ -271,7 +271,7 @@ Two signatures with the same fingerprint have the same number of sorts, the same
 
 ### Equation Builders
 
-The module provides seven factory functions for common axiom equations:
+The module provides ten factory functions for common axiom equations:
 
 | Builder | Equation | Example |
 |---------|----------|---------|
@@ -284,6 +284,7 @@ The module provides seven factory functions for common axiom equations:
 | `make_distrib_equation("mul", "add")` | `mul(a, add(b, c)) = add(mul(a, b), mul(a, c))` | Ring axiom (left) |
 | `make_jacobi_equation("bracket")` | `add(bracket(x, bracket(y, z)), bracket(y, bracket(z, x))) = neg(bracket(z, bracket(x, y)))` | Lie algebra axiom |
 | `make_self_distrib_equation("mul")` | `mul(a, mul(b, c)) = mul(mul(a, b), mul(a, c))` | Quandle axiom (left self-distributivity) |
+| `make_right_self_distrib_equation("mul")` | `mul(mul(a, b), c) = mul(mul(a, c), mul(b, c))` | Right self-distributivity |
 
 These builders are used by both the known structures library (to define seed signatures) and the move engine (to construct axioms in new candidates).
 
@@ -333,7 +334,7 @@ This produces a `ModelSpectrum` mapping each domain size to the number of non-is
 
 ### Phase 4: Re-scoring (Full)
 
-Candidates are re-scored with all 10 dimensions, including the three model-theoretic ones now available.
+Candidates are re-scored with all 12 dimensions, including the four model-theoretic ones now available.
 
 ```python
 score = scorer.score(sig, spectrum, known_fps)
@@ -369,7 +370,7 @@ Each move is a method on `MoveEngine`. Six operate on a single signature; two re
 
 **DEFORM** -- For each non-CUSTOM, non-POSITIVITY axiom, remove it and replace it with a q-deformed variant. For associativity: `(x*y)*z = q * (x*(y*z))`. For commutativity: `x*y = q * (y*x)`. Other axiom kinds receive a generic deformation (the original equation is kept but tagged as CUSTOM). Adds a `Param` sort and a deformation scaling operation.
 
-**SELF_DISTRIB** -- For each binary operation that does not already have self-distributivity, add the axiom `a*(b*c) = (a*b)*(a*c)`. This is left self-distributivity, the key axiom of racks and quandles from knot theory.
+**SELF_DISTRIB** -- For each binary operation, add self-distributivity. Produces up to two variants per operation: left-only `a*(b*c) = (a*b)*(a*c)` and full (both left and right, adding `(a*b)*c = (a*c)*(b*c)`). Skips operations that already have both.
 
 ### Pairwise Moves
 
@@ -435,7 +436,7 @@ Axioms with universally quantified variables are encoded by **complete instantia
 
 The parsed values are assembled into `CayleyTable` objects.
 
-**Fallback:** The `Mace4Fallback` class provides the same interface but delegates to `Z3ModelFinder`. The `ToolExecutor` selects the appropriate solver at initialization time.
+**Fallback:** The `Mace4Fallback` class provides the same interface but delegates to `Z3ModelFinder`. The `SmartSolverRouter` selects the appropriate solver for each signature at runtime.
 
 ### Prover9 (`src/solvers/prover9.py`)
 
@@ -452,14 +453,21 @@ The parsed values are assembled into `CayleyTable` objects.
 
 ### Solver Selection Logic
 
+Solver selection is handled by `SmartSolverRouter` in `src/solvers/router.py`. The router inspects each signature's axiom profile and routes model-finding to the best available solver, avoiding the O(n^3) constraint explosion that causes Z3 to time out on heavy equational theories.
+
 ```
-ToolExecutor.__init__():
+SmartSolverRouter.__init__():
 
     mace4 = Mace4Solver()
-    if mace4.is_available():
-        model_finder = mace4           # Prefer Mace4 when installed
-    else:
-        model_finder = Mace4Fallback() # Delegates to Z3ModelFinder
+    z3_normal = Z3ModelFinder(timeout_ms=30000)
+    z3_heavy = Z3ModelFinder(timeout_ms=60000)  # extended timeout
+
+    For each signature:
+      if has_heavy_axioms(sig):
+          if mace4.is_available(): use mace4
+          else: use z3_heavy (with symmetry breaking)
+      else:
+          use z3_normal
 ```
 
 The FOLTranslator is shared between Mace4 and Prover9 for LADR format generation. Z3 has its own encoder built into `Z3ModelFinder._encode_axiom()`.
@@ -487,11 +495,11 @@ Isomorphism checking between two models is also brute-force over all permutation
 
 ## Scoring and Ranking
 
-The `ScoringEngine` evaluates candidates across 10 dimensions, each normalized to [0, 1]. The final score is a weighted sum.
+The `ScoringEngine` evaluates candidates across 12 dimensions, each normalized to [0, 1]. The final score is a weighted sum.
 
 ### Dimensions
 
-**Structural (5 dimensions):**
+**Structural (6 dimensions):**
 
 | Dimension | What it measures | How it's computed |
 |-----------|-----------------|-------------------|
@@ -500,14 +508,16 @@ The `ScoringEngine` evaluates candidates across 10 dimensions, each normalized t
 | `tension` | Diversity of axiom kinds | (distinct kinds) / min(total kinds, 6). More diverse = more interesting. |
 | `economy` | Occam's razor -- penalizes bloat | Based on total component count (sorts + ops + axioms). Ideal range: 3-12. |
 | `fertility` | Capacity for further exploration | (min(sorts/3, 1) + min(binary_ops/3, 1)) / 2. More sorts and ops = more fertile. |
+| `axiom_synergy` | Known-good axiom combinations? | Checks for IDEM+SD (0.9), left+right SD (1.0) on same binary op. |
 
-**Model-theoretic (3 dimensions):**
+**Model-theoretic (4 dimensions):**
 
 | Dimension | What it measures | How it's computed |
 |-----------|-----------------|-------------------|
-| `has_models` | Binary: does it have any non-trivial finite models? | 1.0 if spectrum is non-empty, else 0.0. |
+| `has_models` | Binary/tri-state: does it have any non-trivial finite models? | 1.0 if spectrum is non-empty, 0.5 if timed out (inconclusive), 0.0 if proven empty. |
 | `model_diversity` | How many models at how many sizes? | (size coverage + count_score) / 2, where count_score = 1 - exp(-avg/3). |
 | `spectrum_pattern` | Does the model spectrum show a pattern? | Checks for primes-only (0.9), powers-of-2 (0.8), arithmetic progression (0.7), monotone counts (0.5). |
+| `solver_difficulty` | Solver completed cleanly? | Penalizes heavy timeouts (proportional) and trivially flat spectra (same count at all sizes). |
 
 **Novelty (2 dimensions):**
 
@@ -519,12 +529,13 @@ The `ScoringEngine` evaluates candidates across 10 dimensions, each normalized t
 ### Default Weights
 
 ```
-connectivity:     0.08    |  has_models:       0.15
-richness:         0.08    |  model_diversity:  0.10
+connectivity:     0.05    |  has_models:        0.15
+richness:         0.08    |  model_diversity:   0.10
 tension:          0.08    |  spectrum_pattern:  0.10
-economy:          0.10    |
-fertility:        0.06    |  is_novel:          0.15
-                          |  distance:          0.10
+economy:          0.10    |  solver_difficulty: 0.05
+fertility:        0.03    |
+axiom_synergy:    0.06    |  is_novel:          0.15
+                          |  distance:          0.05
 ```
 
 The largest weights (0.15 each) go to `has_models` and `is_novel` -- a structure that has no models is vacuously true (uninteresting), and a structure identical to something known is not a discovery.
@@ -562,7 +573,7 @@ Six tools are exposed to the LLM as JSON schemas:
 | `explore` | base_structures, moves, depth, score_threshold | total_candidates, above_threshold, top 50 candidates |
 | `check_models` | signature_id, min_size, max_size, max_models_per_size | spectrum, sizes_with_models, example models |
 | `prove` | signature_id, conjecture, timeout_sec | list of proof results (proved/disproved/timeout) |
-| `score` | signature_id | full 10-dimension score breakdown |
+| `score` | signature_id | full 12-dimension score breakdown |
 | `search_library` | query, min_score, has_models | matching structures from known and discovered |
 | `add_to_library` | signature_id, name, notes | confirmation with final score |
 
@@ -776,7 +787,7 @@ The solver interface is implicit (Mace4Solver, Z3ModelFinder, and Mace4Fallback 
 
 1. Write a class with `find_models(sig, domain_size, max_models) -> Mace4Result` and `compute_spectrum(sig, min_size, max_size, max_models_per_size) -> ModelSpectrum`.
 2. Add an `is_available()` method.
-3. Update the solver selection logic in `ToolExecutor.__init__()`.
+3. Update the solver selection logic in `SmartSolverRouter` (`src/solvers/router.py`).
 
 ---
 
@@ -785,14 +796,15 @@ The solver interface is implicit (Mace4Solver, Z3ModelFinder, and Mace4Fallback 
 | File | LOC (approx) | Responsibility |
 |------|-------------|----------------|
 | `src/core/ast_nodes.py` | 107 | Expression AST: Var, Const, App, Equation |
-| `src/core/signature.py` | 231 | Sort, Operation, Axiom, Signature, AxiomKind, equation builders |
+| `src/core/signature.py` | ~288 | Sort, Operation, Axiom, Signature, 18 AxiomKind variants, 10 equation builders |
 | `src/moves/engine.py` | 540 | MoveEngine with 8 structural moves, MoveKind enum, MoveResult |
 | `src/models/cayley.py` | 187 | CayleyTable representation and analysis, isomorphism checking |
 | `src/solvers/fol_translator.py` | 164 | Signature-to-LADR and signature-to-Z3 translation |
-| `src/solvers/z3_solver.py` | 287 | Z3-based finite model finder with ITE-chain encoding |
+| `src/solvers/z3_solver.py` | 287 | Z3-based finite model finder with ITE-chain encoding, symmetry breaking for heavy signatures |
+| `src/solvers/router.py` | ~130 | Smart solver routing based on signature characteristics |
 | `src/solvers/mace4.py` | 253 | Mace4 subprocess wrapper, output parser, Mace4Fallback |
 | `src/solvers/prover9.py` | 167 | Prover9 subprocess wrapper, ConjectureGenerator |
-| `src/scoring/engine.py` | 285 | ScoringEngine, ScoreBreakdown, 10 scoring dimensions |
+| `src/scoring/engine.py` | 285 | ScoringEngine, ScoreBreakdown, 12 scoring dimensions |
 | `src/agent/tools.py` | 323 | 6 tool schemas, ToolExecutor with caching |
 | `src/agent/controller.py` | 739 | AgentController, CycleReport, 4-phase research loop with live observability |
 | `src/library/known_structures.py` | 346 | 15 seed structures as factory functions |

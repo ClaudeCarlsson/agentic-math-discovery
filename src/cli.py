@@ -139,17 +139,12 @@ def explore(
     if check_models:
         console.print(f"\n[bold]Checking models for top {min(top, len(scored))} candidates...[/bold]")
 
-        from src.solvers.mace4 import Mace4Solver, Mace4Fallback
-        from src.solvers.z3_solver import Z3ModelFinder
+        from src.solvers.router import SmartSolverRouter
 
-        solver = Mace4Solver()
+        solver = SmartSolverRouter()
         if not solver.is_available():
-            console.print("[yellow]Mace4 not found, falling back to Z3...[/yellow]")
-            z3_finder = Z3ModelFinder()
-            if not z3_finder.is_available():
-                console.print("[red]Neither Mace4 nor Z3 available. Install z3-solver: pip install z3-solver[/red]")
-                return
-            solver = Mace4Fallback()
+            console.print("[red]Neither Mace4 nor Z3 available. Install z3-solver: pip install z3-solver[/red]")
+            return
 
         for item in scored[:top]:
             sig = item["_sig"]
@@ -301,7 +296,7 @@ def inspect(ctx: click.Context, name: str, max_size: int) -> None:
     from src.library.known_structures import load_by_name
     from src.utils.display import display_signature, display_score, display_spectrum
     from src.scoring.engine import ScoringEngine
-    from src.solvers.mace4 import Mace4Solver, Mace4Fallback
+    from src.solvers.router import SmartSolverRouter
 
     sig = load_by_name(name)
     if not sig:
@@ -319,9 +314,7 @@ def inspect(ctx: click.Context, name: str, max_size: int) -> None:
 
     # Check models
     console.print(f"\n[bold]Checking models up to size {max_size}...[/bold]")
-    solver = Mace4Solver()
-    if not solver.is_available():
-        solver = Mace4Fallback()
+    solver = SmartSolverRouter()
 
     spectrum = solver.compute_spectrum(sig, min_size=2, max_size=max_size)
     display_spectrum(spectrum)

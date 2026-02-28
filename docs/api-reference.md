@@ -89,7 +89,7 @@ class AxiomKind(str, Enum):
     IDEMPOTENCE         NILPOTENCE          JACOBI
     POSITIVITY          BILINEARITY         HOMOMORPHISM
     FUNCTORIALITY       ABSORPTION          MODULARITY
-    SELF_DISTRIBUTIVITY CUSTOM
+    SELF_DISTRIBUTIVITY RIGHT_SELF_DISTRIBUTIVITY CUSTOM
 ```
 
 #### `Sort(name: str, description: str = "")`
@@ -175,6 +175,9 @@ make_jacobi_equation(bracket_name: str) -> Equation
 
 make_self_distrib_equation(op_name: str) -> Equation
 # a op (b op c) = (a op b) op (a op c)
+
+make_right_self_distrib_equation(op_name: str) -> Equation
+# (a op b) op c = (a op c) op (b op c)
 ```
 
 ---
@@ -300,6 +303,19 @@ class ModelSpectrum:
     def sizes_with_models(self) -> list[int]
     def total_models(self) -> int
     def is_empty(self) -> bool
+    def any_timed_out(self) -> bool   # True if any size timed out
+```
+
+### `src.solvers.router.SmartSolverRouter`
+
+```python
+router = SmartSolverRouter(z3_timeout_ms=30000, mace4_timeout=30, heavy_timeout_multiplier=2.0)
+
+router.is_available() -> bool
+router.classify(sig: Signature) -> str    # "mace4_heavy", "z3_heavy", or "z3_normal"
+
+result: Mace4Result = router.find_models(sig, domain_size, max_models=10)
+spectrum: ModelSpectrum = router.compute_spectrum(sig, min_size=2, max_size=8, max_models_per_size=10)
 ```
 
 ### `src.solvers.prover9.Prover9Solver`
@@ -343,8 +359,9 @@ breakdown: ScoreBreakdown = scorer.score(
 @dataclass
 class ScoreBreakdown:
     connectivity: float    richness: float     tension: float
-    economy: float         fertility: float
+    economy: float         fertility: float     axiom_synergy: float
     has_models: float      model_diversity: float   spectrum_pattern: float
+    solver_difficulty: float
     is_novel: float        distance: float
     total: float
 

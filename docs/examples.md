@@ -146,10 +146,11 @@ python3 run.py explore --base Semigroup --moves SELF_DISTRIB --depth 1 --check-m
 1. The MoveEngine examines Semigroup's binary operation `mul`
 2. `mul` does not have self-distributivity → SELF_DISTRIB adds it: `mul(a, mul(b, c)) = mul(mul(a, b), mul(a, c))`
 
-**Result:** One candidate:
+**Result:** Two candidates:
 - `Semigroup_sd(mul)` — an associative, left self-distributive magma
+- `Semigroup_fsd(mul)` — an associative, fully self-distributive magma (both left and right)
 
-This structure combines associativity with self-distributivity. Self-distributive structures arise in knot theory (racks and quandles) and have connections to the Yang-Baxter equation.
+These structures combine associativity with self-distributivity. Self-distributive structures arise in knot theory (racks and quandles) and have connections to the Yang-Baxter equation.
 
 **Verification:**
 ```bash
@@ -171,7 +172,14 @@ from src.solvers.z3_solver import Z3ModelFinder
 # Set up components
 engine = MoveEngine()
 scorer = ScoringEngine()
+
+# For direct Z3 access:
+from src.solvers.z3_solver import Z3ModelFinder
 z3 = Z3ModelFinder(timeout_ms=10000)
+
+# Preferred: SmartSolverRouter picks the best solver per signature
+from src.solvers.router import SmartSolverRouter
+solver = SmartSolverRouter()
 
 # Generate candidates from Group
 results = engine.apply_all_moves([group()])
@@ -217,11 +225,13 @@ model_weights = {
     "tension": 0.02,
     "economy": 0.04,
     "fertility": 0.02,
-    "has_models": 0.25,       # doubled
-    "model_diversity": 0.20,  # doubled
-    "spectrum_pattern": 0.20, # doubled
-    "is_novel": 0.15,
-    "distance": 0.08,
+    "axiom_synergy": 0.02,
+    "has_models": 0.25,
+    "model_diversity": 0.20,
+    "spectrum_pattern": 0.20,
+    "solver_difficulty": 0.02,
+    "is_novel": 0.12,
+    "distance": 0.07,
 }
 
 scorer = ScoringEngine(weights=model_weights)

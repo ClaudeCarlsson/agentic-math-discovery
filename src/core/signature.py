@@ -34,6 +34,7 @@ class AxiomKind(str, Enum):
     ABSORPTION = "ABSORPTION"
     MODULARITY = "MODULARITY"
     SELF_DISTRIBUTIVITY = "SELF_DISTRIBUTIVITY"
+    RIGHT_SELF_DISTRIBUTIVITY = "RIGHT_SELF_DISTRIBUTIVITY"
     CUSTOM = "CUSTOM"
 
 
@@ -261,6 +262,14 @@ def make_self_distrib_equation(op_name: str) -> Equation:
     a, b, c = Var("a"), Var("b"), Var("c")
     lhs = App(op_name, [a, App(op_name, [b, c])])
     rhs = App(op_name, [App(op_name, [a, b]), App(op_name, [a, c])])
+    return Equation(lhs, rhs)
+
+
+def make_right_self_distrib_equation(op_name: str) -> Equation:
+    """Right self-distributivity: (a*b)*c = (a*c)*(b*c)."""
+    a, b, c = Var("a"), Var("b"), Var("c")
+    lhs = App(op_name, [App(op_name, [a, b]), c])
+    rhs = App(op_name, [App(op_name, [a, c]), App(op_name, [b, c])])
     return Equation(lhs, rhs)
 
 

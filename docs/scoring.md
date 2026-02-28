@@ -1,6 +1,6 @@
 # Interestingness Scoring Reference
 
-The scoring engine evaluates candidate algebraic signatures across 10 dimensions. Each dimension produces a value in [0, 1]. The final score is a weighted sum of all dimensions.
+The scoring engine evaluates candidate algebraic signatures across 12 dimensions. Each dimension produces a value in [0, 1]. The final score is a weighted sum of all dimensions.
 
 Source: `src/scoring/engine.py`
 
@@ -16,13 +16,15 @@ Source: `src/scoring/engine.py`
   - [Tension](#3-tension)
   - [Economy](#4-economy)
   - [Fertility](#5-fertility)
-- [Model-Theoretic Quality (35%)](#model-theoretic-quality)
-  - [Has Models](#6-has-models)
-  - [Model Diversity](#7-model-diversity)
-  - [Spectrum Pattern](#8-spectrum-pattern)
-- [Novelty (25%)](#novelty)
-  - [Is Novel](#9-is-novel)
-  - [Distance](#10-distance)
+  - [Axiom Synergy](#6-axiom-synergy)
+- [Model-Theoretic Quality (40%)](#model-theoretic-quality)
+  - [Has Models](#7-has-models)
+  - [Model Diversity](#8-model-diversity)
+  - [Spectrum Pattern](#9-spectrum-pattern)
+  - [Solver Difficulty](#10-solver-difficulty)
+- [Novelty (20%)](#novelty)
+  - [Is Novel](#11-is-novel)
+  - [Distance](#12-distance)
 - [Interpreting Scores](#interpreting-scores)
 - [Customizing Weights](#customizing-weights)
 - [Design Philosophy](#design-philosophy)
@@ -33,13 +35,13 @@ Source: `src/scoring/engine.py`
 
 Every candidate signature produced by the move engine passes through the `ScoringEngine`. The engine computes a `ScoreBreakdown` with one float per dimension and a weighted total. The total determines whether the candidate enters the library, gets explored further, or gets discarded.
 
-The 10 dimensions fall into three groups:
+The 12 dimensions fall into three groups:
 
 | Group               | Weight | Purpose                                     |
 |---------------------|--------|---------------------------------------------|
 | Structural Quality  | 40%    | Is the signature well-formed and balanced?   |
-| Model-Theoretic     | 35%    | Does it have interesting finite models?      |
-| Novelty             | 25%    | Is it genuinely new?                         |
+| Model-Theoretic     | 40%    | Does it have interesting finite models?      |
+| Novelty             | 20%    | Is it genuinely new?                         |
 
 ---
 
@@ -47,16 +49,18 @@ The 10 dimensions fall into three groups:
 
 ```python
 DEFAULT_WEIGHTS = {
-    "connectivity": 0.08,
+    "connectivity": 0.05,
     "richness": 0.08,
     "tension": 0.08,
     "economy": 0.10,
-    "fertility": 0.06,
+    "fertility": 0.03,
+    "axiom_synergy": 0.06,
     "has_models": 0.15,
     "model_diversity": 0.10,
     "spectrum_pattern": 0.10,
+    "solver_difficulty": 0.05,
     "is_novel": 0.15,
-    "distance": 0.10,
+    "distance": 0.05,
 }
 ```
 
@@ -70,14 +74,14 @@ total = sum(weight[d] * score[d] for d in dimensions)
 
 ## Structural Quality
 
-These five dimensions measure the intrinsic shape of the signature -- whether its sorts, operations, and axioms form a balanced, well-connected whole. They require no model checking and are computed directly from the signature definition.
+These six dimensions measure the intrinsic shape of the signature -- whether its sorts, operations, and axioms form a balanced, well-connected whole. They require no model checking and are computed directly from the signature definition.
 
-Total structural weight: 0.08 + 0.08 + 0.08 + 0.10 + 0.06 = **0.40**
+Total structural weight: 0.05 + 0.08 + 0.08 + 0.10 + 0.03 + 0.06 = **0.40**
 
 
 ### 1. Connectivity
 
-**Weight: 0.08**
+**Weight: 0.05**
 
 Measures how well the operations connect the sorts in a multi-sorted signature.
 
@@ -107,7 +111,7 @@ A *cross-sort operation* is one whose domain and codomain span more than one sor
 | InnerProductSpace | V, K  | scale: K x V -> V, inner: V x V -> K | ~0.80  |
 | LieAlgebra        | L, K  | scale: K x L -> L               | ~0.58        |
 
-**When it matters:** This dimension primarily differentiates multi-sorted candidates. For single-sorted structures (the majority of classical algebra), it contributes a flat 0.04 to the total (0.08 * 0.5).
+**When it matters:** This dimension primarily differentiates multi-sorted candidates. For single-sorted structures (the majority of classical algebra), it contributes a flat 0.025 to the total (0.05 * 0.5).
 
 
 ### 2. Richness
@@ -195,15 +199,15 @@ Occam's razor applied to signatures. Simpler signatures that still constrain hea
 total_size = |sorts| + |operations| + |axioms|
 
 if total_size <= 2:  return 0.4
-if total_size <= 12: return 1.0 - max(0, total_size - 5) * 0.04
-if total_size > 12:  return max(0.1, 1.0 - total_size * 0.04)
+if total_size <= 12: return 1.0 - max(0, total_size - 5) * 0.08
+if total_size > 12:  return max(0.1, 1.0 - total_size * 0.06)
 ```
 
 This is a piecewise linear function:
 
 ```
 Size:  1   2   3   4   5   6   7   8   9  10  11  12  15  20  25
-Score: 0.4 0.4 1.0 1.0 1.0 0.96 0.92 0.88 0.84 0.80 0.76 0.72 0.40 0.20 0.10
+Score: 0.4 0.4 1.0 1.0 1.0 0.92 0.84 0.76 0.68 0.60 0.52 0.44 0.10 0.10 0.10
 ```
 
 Peak score (1.0) is at sizes 3-5. Signatures smaller than 3 are too trivial (0.4). Signatures larger than 12 are penalized steeply. The floor is 0.1.
@@ -217,18 +221,18 @@ Peak score (1.0) is at sizes 3-5. Signatures smaller than 3 are too trivial (0.4
 | Magma             | 1     | 1   | 0      | 2    | 0.40    |
 | Semigroup         | 1     | 1   | 1      | 3    | 1.00    |
 | Monoid            | 1     | 2   | 2      | 5    | 1.00    |
-| Group             | 1     | 3   | 3      | 7    | 0.92    |
-| AbelianGroup      | 1     | 3   | 4      | 8    | 0.88    |
-| Ring              | 1     | 4   | 6      | 11   | 0.76    |
-| Lattice           | 1     | 2   | 8      | 11   | 0.76    |
-| LieAlgebra        | 2     | 5   | 7      | 14   | 0.44    |
+| Group             | 1     | 3   | 3      | 7    | 0.84    |
+| AbelianGroup      | 1     | 3   | 4      | 8    | 0.76    |
+| Ring              | 1     | 4   | 6      | 11   | 0.52    |
+| Lattice           | 1     | 2   | 8      | 11   | 0.52    |
+| LieAlgebra        | 2     | 5   | 7      | 14   | 0.16    |
 
 Economy is the highest-weighted structural dimension (0.10). It acts as a soft penalty on move sequences that pile up sorts, operations, and axioms.
 
 
 ### 5. Fertility
 
-**Weight: 0.06**
+**Weight: 0.03**
 
 Can further constructions be built on this signature? Estimates the potential for the move engine to produce interesting children.
 
@@ -255,45 +259,77 @@ fertility  = (sort_score + op_score) / 2
 | VectorSpace   | 2     | 1          | 0.50      |
 | LieAlgebra    | 2     | 2          | 0.67      |
 
-**Why the lowest weight?** Fertility is forward-looking -- it predicts potential rather than measuring actual quality. It gets the smallest weight (0.06) because the system should not favor structures just because they are rich in components. Economy (0.10) counterbalances fertility by penalizing bloated signatures.
+**Why the lowest weight?** Fertility is forward-looking -- it predicts potential rather than measuring actual quality. It gets the smallest weight (0.03) because the system should not favor structures just because they are rich in components. Economy (0.10) counterbalances fertility by penalizing bloated signatures.
+
+### 6. Axiom Synergy
+
+**Weight: 0.06**
+
+Detects known-good axiom combinations on binary operations. Rewards signatures where the same binary operation carries axiom combos that are mathematically rich.
+
+**Formula:**
+
+For each binary operation, collect all axiom kinds that reference it. Score based on the best match:
+
+| Pattern | Axiom Combination | Score |
+|---------|-------------------|-------|
+| Distributive quandle | IDEMPOTENCE + SELF_DISTRIBUTIVITY + RIGHT_SELF_DISTRIBUTIVITY | 1.0 |
+| Full distributivity | SELF_DISTRIBUTIVITY + RIGHT_SELF_DISTRIBUTIVITY | 1.0 |
+| Quandle instinct | IDEMPOTENCE + SELF_DISTRIBUTIVITY | 0.9 |
+| No match | Anything else | 0.0 |
+
+Returns the best score across all binary operations.
+
+**Intuition:** The agent's own research revealed that certain axiom combinations -- particularly idempotence with self-distributivity (quandle territory) and left + right self-distributivity (full distributivity) -- are mathematically rich. Without this dimension, a signature with IDEMPOTENCE + SELF_DISTRIBUTIVITY looks no different from random axiom soup to the Phase 1 scorer. This dimension gives the system "axiom instinct."
+
+**Worked examples:**
+
+| Signature | Binary op axioms | Synergy |
+|-----------|-----------------|---------|
+| Quandle | IDEM + SELF_DISTRIB on mul | 0.9 |
+| Full-SD Magma | SELF_DISTRIB + RIGHT_SELF_DISTRIB on mul | 1.0 |
+| Semigroup | ASSOC on mul | 0.0 |
+| Ring | ASSOC on add, ASSOC+DISTRIB on mul | 0.0 |
 
 ---
 
 ## Model-Theoretic Quality
 
-These three dimensions require running a model checker (Z3 or Mace4) to find finite models of the signature. They provide the strongest signal of mathematical substance. A signature that passes structural checks but has no models is vacuous.
+These four dimensions require running a model checker (Z3 or Mace4) to find finite models of the signature. They provide the strongest signal of mathematical substance. A signature that passes structural checks but has no models is vacuous.
 
-Total model-theoretic weight: 0.15 + 0.10 + 0.10 = **0.35**
+Total model-theoretic weight: 0.15 + 0.10 + 0.10 + 0.05 = **0.40**
 
-If no spectrum is provided to `ScoringEngine.score()`, all three dimensions default to 0.0.
+If no spectrum is provided to `ScoringEngine.score()`, all four dimensions default to 0.0.
 
 
-### 6. Has Models
+### 7. Has Models
 
 **Weight: 0.15**
 
-Binary check: does the signature have at least one non-trivial finite model?
+Tri-state check: does the signature have at least one non-trivial finite model?
 
 **Formula:**
 
 ```
 has_models = 1.0  if spectrum is not empty
-has_models = 0.0  otherwise
+has_models = 0.5  if spectrum is empty but some sizes timed out (inconclusive)
+has_models = 0.0  if spectrum is empty and all sizes completed cleanly (proven empty)
 ```
 
-A spectrum is "not empty" when `ModelSpectrum.total_models() > 0`, meaning at least one domain size has at least one model.
+A spectrum is "not empty" when `ModelSpectrum.total_models() > 0`, meaning at least one domain size has at least one model. The 0.5 value for inconclusive results prevents the system from treating solver timeouts as proof of emptiness. A structure that timed out at large sizes may have models beyond the tested range.
 
 **Intuition:** This is the single most important dimension. A signature with no finite models is either:
 
 1. **Contradictory** -- the axioms are mutually inconsistent. No structure can satisfy them all.
 2. **Only infinite** -- models exist but are all infinite (like the theory of dense linear orders). These are mathematically real but not discoverable by finite model checking.
+3. **Inconclusive** -- the solver timed out before exploring all sizes. Models may exist at larger sizes.
 
-Either way, the system cannot verify the structure, so it scores zero on all model-theoretic dimensions. This makes it nearly impossible for a modelless signature to reach the "interesting" threshold.
+For cases 1 and 2, the system scores zero on all model-theoretic dimensions. For case 3, the partial credit of 0.5 keeps the candidate alive for future exploration with longer timeouts. This makes it nearly impossible for a genuinely modelless signature to reach the "interesting" threshold.
 
-**Impact on total score:** Since has_models is binary and weighted at 0.15, a signature without models loses 0.15 from the maximum total. Combined with model_diversity (0.10) and spectrum_pattern (0.10) also being zero, that is 0.35 total -- over a third of the possible score.
+**Impact on total score:** Since has_models is weighted at 0.15, a signature proven to have no models loses 0.15 from the maximum total. Combined with model_diversity (0.10), spectrum_pattern (0.10), and solver_difficulty (0.05) also being zero, that is 0.40 total -- 40% of the possible score.
 
 
-### 7. Model Diversity
+### 8. Model Diversity
 
 **Weight: 0.10**
 
@@ -336,7 +372,7 @@ model_diversity = (0.80 + 0.44) / 2 = 0.62
 ```
 
 
-### 8. Spectrum Pattern
+### 9. Spectrum Pattern
 
 **Weight: 0.10**
 
@@ -369,16 +405,54 @@ Requires at least 2 sizes with models; returns 0.0 for fewer.
 
 **Implementation note:** The prime set is hardcoded to `{2, 3, 5, 7, 11, 13, 17, 19, 23}` and the power-of-2 set to `{1, 2, 4, 8, 16, 32}`, matching the practical range of sizes tested by the model checker (typically 2-8, sometimes up to 32).
 
+
+### 10. Solver Difficulty
+
+**Weight: 0.05**
+
+Penalizes spectra with heavy timeouts or trivially saturated model counts.
+
+**Formula:**
+
+```
+timeout_ratio = |timed_out_sizes| / |sizes_checked|
+timeout_penalty = 1.0 - timeout_ratio
+
+counts = [non-zero model counts]
+if len(counts) >= 3 and all counts identical:
+    flatness_penalty = 0.7
+else:
+    flatness_penalty = 1.0
+
+solver_difficulty = timeout_penalty * flatness_penalty
+```
+
+**Intuition:** Two failure modes exist:
+
+- **Too hard:** If the solver times out on most sizes, the spectrum is unreliable. The structure may be interesting but we cannot confirm it.
+- **Too easy:** If every tested size has the exact same non-zero model count (e.g., 10 models at every size), the structure is likely trivially saturated -- the model checker hit its cap everywhere.
+
+Structures where the solver completed cleanly and found a varied spectrum score highest (1.0). All timeouts score 0.0.
+
+**Worked examples:**
+
+| Spectrum | Timed out | Counts | Score |
+|----------|-----------|--------|-------|
+| {2:1, 3:2, 4:5} sizes=5 | none | varied | 1.0 |
+| {2:10, 3:10, 4:10} | none | all same | 0.7 |
+| sizes=5 | 3 of 5 | -- | 0.4 |
+| sizes=5 | 5 of 5 | -- | 0.0 |
+
 ---
 
 ## Novelty
 
 These two dimensions measure whether the candidate is genuinely new or just a relabeled copy of something already known.
 
-Total novelty weight: 0.15 + 0.10 = **0.25**
+Total novelty weight: 0.15 + 0.05 = **0.20**
 
 
-### 9. Is Novel
+### 11. Is Novel
 
 **Weight: 0.15**
 
@@ -413,9 +487,9 @@ Sig(name="MyGroup", sorts=["X"], ops=[star/2, unit/0, flip/1],
 **Interaction with the library:** When scoring, the caller passes `known_fingerprints`, the set of fingerprints to check against. The agent's `ToolExecutor` calls `LibraryManager.all_fingerprints()`, which includes both the 15 seed structures and all previously discovered structures. Any candidate matching an existing fingerprint scores 0.0. The impact is large: 0.15 weight means rediscovering a known or previously discovered structure loses 15% of the maximum score.
 
 
-### 10. Distance
+### 12. Distance
 
-**Weight: 0.10**
+**Weight: 0.05**
 
 How far is this candidate from known structures in the derivation space?
 
@@ -423,25 +497,25 @@ How far is this candidate from known structures in the derivation space?
 
 ```
 length_score    = min(|derivation_chain| / 5, 1.0)
-diversity_score = |unique move kinds used| / 7
+diversity_score = |unique move kinds used| / 8
 
 distance = (length_score + diversity_score) / 2
 ```
 
 The derivation chain is a list of strings stored on each `Signature` that records which moves were applied to produce it. Each entry is a human-readable description like `"Dualize(Group)"` or `"Complete(Semigroup_dual)"`.
 
-The 7 possible move kinds, matched by substring:
+The 8 possible move kinds, matched by substring:
 
 ```
-Abstract, Dualize, Complete, Quotient, Internalize, Transfer, Deform
+Abstract, Dualize, Complete, Quotient, Internalize, Transfer, Deform, SelfDistrib
 ```
 
 **Intuition:** A candidate produced by a long chain of diverse moves is further from known territory. A single dualization of a group is still "close" to groups. But if you dualize, then complete, then abstract, then transfer -- that is 4 moves with 4 kinds, giving:
 
 ```
 length_score    = min(4/5, 1.0) = 0.80
-diversity_score = 4/7 = 0.57
-distance        = (0.80 + 0.57) / 2 = 0.69
+diversity_score = 4/8 = 0.50
+distance        = (0.80 + 0.50) / 2 = 0.65
 ```
 
 **Edge case:** A base structure from the known library has an empty derivation chain, so distance = 0.0. This is correct -- known structures are at distance zero from themselves.
@@ -462,40 +536,42 @@ distance        = (0.80 + 0.57) / 2 = 0.69
 
 **Score ceilings without model checking:**
 
-Without a model spectrum, has_models, model_diversity, and spectrum_pattern all default to 0.0. The maximum possible score from structural + novelty dimensions alone is:
+Without a model spectrum, has_models, model_diversity, spectrum_pattern, and solver_difficulty all default to 0.0. The maximum possible score from structural + novelty dimensions alone is:
 
 ```
-max_no_models = 0.08 + 0.08 + 0.08 + 0.10 + 0.06 + 0.15 + 0.10 = 0.65
+max_no_models = 0.05 + 0.08 + 0.08 + 0.10 + 0.03 + 0.06 + 0.15 + 0.05 = 0.60
 ```
 
 In practice, a candidate scoring above 0.50 without model data is a strong signal that model checking is worth the computational cost.
 
 **A concrete walkthrough:**
 
-Consider a novel candidate derived from Group by three diverse moves (Dualize, Complete, Abstract). It has 1 sort, 2 operations, 2 axioms (ASSOCIATIVITY, COMMUTATIVITY), and models at sizes 2, 3, 4 with 1, 1, 2 models respectively.
+Consider a novel candidate derived from Group by three diverse moves (Dualize, Complete, Abstract). It has 1 sort, 2 operations, 2 axioms (ASSOCIATIVITY, COMMUTATIVITY), and models at sizes 2, 3, 4 with 1, 1, 2 models respectively. No solver timeouts occurred.
 
 ```
-connectivity   = 0.50  (single-sorted)
-richness       = 1.00  (2 axioms / 2 ops = ratio 1.0)
-tension        = 0.33  (2 kinds / 6)
-economy        = 1.00  (size = 1+2+2 = 5, in peak range)
-fertility      = 0.33  (1 sort, 1 binary op)
-has_models     = 1.00  (spectrum is non-empty)
-model_diversity= 0.56  (coverage 3/3=1.0, avg 4/3=1.33, count_score=0.36 => (1+0.36)/2 ~ 0.56 - approx)
-spectrum_pattern= 0.50 (counts 1,1,2 are monotone increasing)
-is_novel       = 1.00  (fingerprint not in known set)
-distance       = 0.64  (chain length 3, diversity 3/7)
+connectivity    = 0.50  (single-sorted)
+richness        = 1.00  (2 axioms / 2 ops = ratio 1.0)
+tension         = 0.33  (2 kinds / 6)
+economy         = 1.00  (size = 1+2+2 = 5, in peak range)
+fertility       = 0.33  (1 sort, 1 binary op)
+axiom_synergy   = 0.00  (ASSOC + COMM is not a synergy pattern)
+has_models      = 1.00  (spectrum is non-empty)
+model_diversity = 0.56  (coverage 3/3=1.0, avg 4/3=1.33, count_score=0.36 => (1+0.36)/2 ~ 0.56 - approx)
+spectrum_pattern= 0.50  (counts 1,1,2 are monotone increasing)
+solver_difficulty= 1.00 (no timeouts, varied counts)
+is_novel        = 1.00  (fingerprint not in known set)
+distance        = 0.59  (chain length 3, diversity 3/8)
 
-total = 0.08*0.50 + 0.08*1.00 + 0.08*0.33 + 0.10*1.00 + 0.06*0.33
-      + 0.15*1.00 + 0.10*0.56 + 0.10*0.50
-      + 0.15*1.00 + 0.10*0.64
-      = 0.04 + 0.08 + 0.026 + 0.10 + 0.020
-      + 0.15 + 0.056 + 0.05
-      + 0.15 + 0.064
-      = 0.736
+total = 0.05*0.50 + 0.08*1.00 + 0.08*0.33 + 0.10*1.00 + 0.03*0.33 + 0.06*0.00
+      + 0.15*1.00 + 0.10*0.56 + 0.10*0.50 + 0.05*1.00
+      + 0.15*1.00 + 0.05*0.59
+      = 0.025 + 0.08 + 0.026 + 0.10 + 0.010 + 0.00
+      + 0.15 + 0.056 + 0.05 + 0.05
+      + 0.15 + 0.030
+      = 0.727
 ```
 
-Score 0.74 -- solidly in the "interesting with verified models" range.
+Score 0.73 -- solidly in the "interesting with verified models" range.
 
 ---
 
@@ -512,12 +588,14 @@ model_focused = {
     "richness": 0.03,
     "tension": 0.03,
     "economy": 0.06,
-    "fertility": 0.03,
+    "fertility": 0.02,
+    "axiom_synergy": 0.03,
     "has_models": 0.20,
-    "model_diversity": 0.20,
-    "spectrum_pattern": 0.20,
+    "model_diversity": 0.18,
+    "spectrum_pattern": 0.18,
+    "solver_difficulty": 0.04,
     "is_novel": 0.12,
-    "distance": 0.10,
+    "distance": 0.08,
 }
 
 scorer = ScoringEngine(weights=model_focused)
@@ -531,17 +609,19 @@ Weights do not need to sum to 1.0, but the total score will exceed 1.0 if they s
 ```python
 # Novelty-focused: find things that are genuinely different
 novelty_weights = {
-    "connectivity": 0.05, "richness": 0.05, "tension": 0.05,
-    "economy": 0.05, "fertility": 0.05,
-    "has_models": 0.10, "model_diversity": 0.05, "spectrum_pattern": 0.10,
-    "is_novel": 0.25, "distance": 0.25,
+    "connectivity": 0.04, "richness": 0.04, "tension": 0.04,
+    "economy": 0.04, "fertility": 0.02, "axiom_synergy": 0.02,
+    "has_models": 0.08, "model_diversity": 0.04, "spectrum_pattern": 0.08,
+    "solver_difficulty": 0.02,
+    "is_novel": 0.29, "distance": 0.29,
 }
 
 # Economy-focused: find the simplest interesting structures
 economy_weights = {
-    "connectivity": 0.05, "richness": 0.10, "tension": 0.05,
-    "economy": 0.25, "fertility": 0.05,
-    "has_models": 0.15, "model_diversity": 0.10, "spectrum_pattern": 0.05,
+    "connectivity": 0.04, "richness": 0.08, "tension": 0.04,
+    "economy": 0.25, "fertility": 0.03, "axiom_synergy": 0.04,
+    "has_models": 0.15, "model_diversity": 0.08, "spectrum_pattern": 0.05,
+    "solver_difficulty": 0.04,
     "is_novel": 0.10, "distance": 0.10,
 }
 ```
@@ -554,8 +634,8 @@ The scoring system is deliberately conservative. It is better to miss an interes
 
 **Why model-theoretic dimensions dominate.** Structural heuristics (connectivity, richness, tension, economy, fertility) are educated guesses based on the shape of the signature. They can be computed instantly but they can be fooled. A signature might look well-balanced and novel but have no finite models -- meaning it is either contradictory or only realized in infinite structures neither of which the system can verify.
 
-The model-theoretic dimensions (has_models, model_diversity, spectrum_pattern) provide ground truth. When a model checker finds a Cayley table satisfying all the axioms, that is a proof that the structure exists. The 35% weight on model-theoretic quality reflects this epistemic advantage.
+The model-theoretic dimensions (has_models, model_diversity, spectrum_pattern, solver_difficulty) provide ground truth. When a model checker finds a Cayley table satisfying all the axioms, that is a proof that the structure exists. The 40% weight on model-theoretic quality reflects this epistemic advantage.
 
-**Why novelty is weighted heavily but not dominantly.** A novel structure with no models is worthless. A known structure with interesting models is already known. The 25% novelty weight ensures rediscoveries are penalized but does not let novelty override the requirement for verified models.
+**Why novelty is weighted heavily but not dominantly.** A novel structure with no models is worthless. A known structure with interesting models is already known. The 20% novelty weight ensures rediscoveries are penalized but does not let novelty override the requirement for verified models.
 
 **Why economy gets the highest structural weight.** Among the structural dimensions, economy (0.10) is the most reliable. The move engine tends to grow signatures -- each move can add sorts, operations, and axioms. Without the economy penalty, the system would drift toward increasingly bloated candidates. Economy pulls back toward Occam's razor: the best structures are the ones that say a lot with a little.

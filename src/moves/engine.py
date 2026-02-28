@@ -16,7 +16,7 @@ from src.core.signature import (
     Axiom, AxiomKind, Operation, Signature, Sort,
     make_assoc_equation, make_comm_equation, make_identity_equation,
     make_inverse_equation, make_distrib_equation, make_idempotent_equation,
-    make_self_distrib_equation,
+    make_self_distrib_equation, make_right_self_distrib_equation,
 )
 from src.core.ast_nodes import App, Const, Equation, Var
 
@@ -533,18 +533,30 @@ class MoveEngine:
 
     # --- M8: SELF_DISTRIB ---
     def self_distrib(self, sig: Signature) -> list[MoveResult]:
-        """Add left self-distributivity to a binary operation.
+        """Add self-distributivity to a binary operation.
 
-        Left self-distributivity: a*(b*c) = (a*b)*(a*c).
-        This axiom arises in rack and quandle theory (knot theory).
+        Produces up to 2 results per binary op:
+        1. Left-only: a*(b*c) = (a*b)*(a*c)
+        2. Full (left + right): adds (a*b)*c = (a*c)*(b*c) as well
+
+        Skips left-only if left already present. Skips entirely if both present.
         """
         results = []
         for op in sig.get_ops_by_arity(2):
-            already = any(
+            has_left = any(
                 a.kind == AxiomKind.SELF_DISTRIBUTIVITY and op.name in a.operations
                 for a in sig.axioms
             )
-            if not already:
+            has_right = any(
+                a.kind == AxiomKind.RIGHT_SELF_DISTRIBUTIVITY and op.name in a.operations
+                for a in sig.axioms
+            )
+
+            if has_left and has_right:
+                continue  # Both already present, skip entirely
+
+            # Left-only variant (skip if left already present)
+            if not has_left:
                 new_sig = _deep_copy_sig(sig, f"{sig.name}_sd({op.name})")
                 new_sig.derivation_chain.append(f"SelfDistrib({op.name})")
                 new_sig.axioms.append(
@@ -558,8 +570,33 @@ class MoveEngine:
                     signature=new_sig,
                     move=MoveKind.SELF_DISTRIB,
                     parents=[sig.name],
-                    description=f"Add self-distributivity to {op.name} in {sig.name}",
+                    description=f"Add left self-distributivity to {op.name} in {sig.name}",
                 ))
+
+            # Full distributivity variant (left + right together)
+            new_sig = _deep_copy_sig(sig, f"{sig.name}_fsd({op.name})")
+            new_sig.derivation_chain.append(f"FullSelfDistrib({op.name})")
+            if not has_left:
+                new_sig.axioms.append(
+                    Axiom(
+                        AxiomKind.SELF_DISTRIBUTIVITY,
+                        make_self_distrib_equation(op.name),
+                        [op.name],
+                    )
+                )
+            new_sig.axioms.append(
+                Axiom(
+                    AxiomKind.RIGHT_SELF_DISTRIBUTIVITY,
+                    make_right_self_distrib_equation(op.name),
+                    [op.name],
+                )
+            )
+            results.append(MoveResult(
+                signature=new_sig,
+                move=MoveKind.SELF_DISTRIB,
+                parents=[sig.name],
+                description=f"Add full self-distributivity to {op.name} in {sig.name}",
+            ))
         return results
 
 
@@ -583,6 +620,7 @@ def _axiom_for_kind(kind: AxiomKind, op_name: str) -> Equation | None:
         AxiomKind.COMMUTATIVITY: make_comm_equation,
         AxiomKind.IDEMPOTENCE: make_idempotent_equation,
         AxiomKind.SELF_DISTRIBUTIVITY: make_self_distrib_equation,
+        AxiomKind.RIGHT_SELF_DISTRIBUTIVITY: make_right_self_distrib_equation,
     }
     fn = dispatch.get(kind)
     return fn(op_name) if fn else None

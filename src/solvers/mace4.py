@@ -147,6 +147,8 @@ class Mace4Solver:
             n_models = len(result.models_found)
             spectrum.spectrum[size] = n_models
             spectrum.models_by_size[size] = result.models_found
+            if result.timed_out:
+                spectrum.timed_out_sizes.append(size)
 
         return spectrum
 
@@ -253,4 +255,6 @@ class Mace4Fallback:
             result = self.find_models(sig, size, max_models_per_size)
             spectrum.spectrum[size] = len(result.models_found)
             spectrum.models_by_size[size] = result.models_found
+            if result.timed_out:
+                spectrum.timed_out_sizes.append(size)
         return spectrum
