@@ -196,3 +196,13 @@ class TestZ3Solver:
         assert 2 in spectrum.spectrum
         assert 3 in spectrum.spectrum
         assert spectrum.spectrum[2] >= 1
+
+    def test_timeout_sets_timed_out_flag(self):
+        """When Z3 times out, the result should have timed_out=True."""
+        from src.solvers.z3_solver import Z3ModelFinder
+        finder = Z3ModelFinder(timeout_ms=1)
+        if not finder.is_available():
+            pytest.skip("z3-solver not installed")
+        # Group at size 10 is complex enough to not finish in 1ms
+        result = finder.find_models(group(), domain_size=10, max_models=1)
+        assert result.timed_out is True

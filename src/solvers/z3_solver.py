@@ -90,8 +90,12 @@ class Z3ModelFinder:
 
         # Find models
         models: list[CayleyTable] = []
+        timed_out = False
         for _ in range(max_models):
             result = solver.check()
+            if result == z3.unknown:
+                timed_out = True
+                break
             if result != z3.sat:
                 break
 
@@ -144,6 +148,7 @@ class Z3ModelFinder:
             models_found=models,
             exit_code=0 if models else 1,
             raw_output=f"Z3 found {len(models)} model(s)",
+            timed_out=timed_out,
         )
 
     def compute_spectrum(

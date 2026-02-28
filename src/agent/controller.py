@@ -666,11 +666,23 @@ If nothing stands out this cycle, return empty lists."""
                 return None
 
     def _save_report(self, report: CycleReport) -> None:
-        """Save a cycle report to disk."""
+        """Save a cycle report to disk.
+
+        Uses persistent numbering: scans existing reports and picks
+        max_existing + 1 so that multiple runs never overwrite each other.
+        """
         reports_dir = self.library.base_path / "reports"
         reports_dir.mkdir(parents=True, exist_ok=True)
 
-        report_path = reports_dir / f"cycle_{report.cycle_number:03d}_report.md"
+        # Find the highest existing cycle number
+        max_num = 0
+        for f in reports_dir.glob("cycle_*_report.md"):
+            m = re.match(r"cycle_(\d+)_report\.md", f.name)
+            if m:
+                max_num = max(max_num, int(m.group(1)))
+
+        next_num = max_num + 1
+        report_path = reports_dir / f"cycle_{next_num:03d}_report.md"
         content = self._format_report_md(report)
         report_path.write_text(content)
 

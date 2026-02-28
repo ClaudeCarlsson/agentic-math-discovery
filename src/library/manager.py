@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,15 @@ class LibraryManager:
         from src.library.known_structures import load_all_known
         return [sig.fingerprint() for sig in load_all_known()]
 
+    def all_fingerprints(self) -> list[str]:
+        """Get fingerprints of all known AND discovered structures."""
+        fps = self.known_fingerprints()
+        for disc in self.list_discovered():
+            fp = disc.get("fingerprint")
+            if fp:
+                fps.append(fp)
+        return fps
+
     def list_known(self) -> list[str]:
         """List names of all known structures."""
         from src.library.known_structures import KNOWN_STRUCTURES
@@ -52,23 +62,47 @@ class LibraryManager:
         notes: str,
         score: ScoreBreakdown,
     ) -> Path:
-        """Add a new discovery to the library."""
-        discovered_dir = self.base_path / "discovered"
-        existing = list(discovered_dir.glob("disc_*.json"))
-        next_id = len(existing) + 1
+        """Add a new discovery to the library.
 
-        filename = f"disc_{next_id:04d}_{_safe_name(name)}.json"
+        Returns the path to the discovery file.  If a discovery with the
+        same fingerprint already exists, the existing path is returned
+        without overwriting.
+        """
+        discovered_dir = self.base_path / "discovered"
+
+        # Check for duplicate fingerprint among existing discoveries
+        fp = sig.fingerprint()
+        for f in discovered_dir.glob("disc_*.json"):
+            try:
+                data = json.loads(f.read_text())
+                if data.get("fingerprint") == fp:
+                    return f
+            except (json.JSONDecodeError, OSError):
+                continue
+
+        # Parse max ID from existing filenames (not count)
+        max_id = 0
+        for f in discovered_dir.glob("disc_*.json"):
+            m = re.match(r"disc_(\d+)", f.stem)
+            if m:
+                max_id = max(max_id, int(m.group(1)))
+        next_id = max_id + 1
+
+        # Strip any existing disc_NNNN_ prefix from the name
+        clean_name = re.sub(r"^disc_\d+_", "", name)
+
+        filename = f"disc_{next_id:04d}_{_safe_name(clean_name)}.json"
         path = discovered_dir / filename
 
         data = {
             "id": f"disc_{next_id:04d}",
-            "name": name,
+            "name": clean_name,
             "signature": sig.to_dict(),
             "derivation_chain": sig.derivation_chain,
             "score": score.total,
             "score_breakdown": score.to_dict(),
             "notes": notes,
-            "fingerprint": sig.fingerprint(),
+            "fingerprint": fp,
         }
 
         path.write_text(json.dumps(data, indent=2))

@@ -204,7 +204,9 @@ translates it into Z3 expressions:
   int) trigger If-Then-Else chain lookups
 
 **Step 4: Solving.** `solver.check()` is called. If `sat`, the model is
-extracted. If `unsat` or `unknown`, no model is returned for that iteration.
+extracted. If `unsat`, no model is returned and the search ends. If
+`unknown` (typically caused by a timeout), the search ends and the result
+is returned with `timed_out=True`.
 
 **Step 5: Model blocking.** To find multiple distinct models, each found model
 is blocked by adding a disjunction requiring at least one table entry to differ:
@@ -421,6 +423,11 @@ unary_pattern = r"function\((\w+)\(_\),\s*\[\s*([\d,\s]+)\]\)"
 If the subprocess exceeds the configured timeout (default 30 seconds), a
 `Mace4Result` is returned with `timed_out=True`, an empty model list, and
 exit code `-1`.
+
+`Z3ModelFinder` also sets `timed_out=True` on its returned `Mace4Result`
+when `solver.check()` returns `z3.unknown`, which is the typical Z3
+response when the configured timeout is exceeded. Any models found before
+the timeout are still included in the result.
 
 ### Mace4Fallback
 

@@ -205,7 +205,7 @@ class ToolExecutor:
             current = [r.signature for r in results]
 
         # Score and filter
-        known_fps = set(self.library.known_fingerprints())
+        known_fps = set(self.library.all_fingerprints())
         scored = []
         for r in all_results:
             score = self.scorer.score(r.signature, known_fingerprints=known_fps)
@@ -284,7 +284,7 @@ class ToolExecutor:
             return {"error": f"Signature '{sig_id}' not found"}
 
         spectrum = self._spectra.get(sig_id)
-        known_fps = set(self.library.known_fingerprints())
+        known_fps = set(self.library.all_fingerprints())
         breakdown = self.scorer.score(sig, spectrum, known_fps)
 
         return {
@@ -315,7 +315,7 @@ class ToolExecutor:
             return {"error": f"Candidate '{sig_id}' not found in current session"}
 
         spectrum = self._spectra.get(sig_id)
-        known_fps = set(self.library.known_fingerprints())
+        known_fps = set(self.library.all_fingerprints())
         score = self.scorer.score(sig, spectrum, known_fps)
 
         self.library.add_discovery(sig, name, notes, score)

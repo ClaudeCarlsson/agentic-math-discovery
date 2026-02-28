@@ -315,7 +315,9 @@ Goal: "Find structures relevant to number theory"
 
 ## Cycle Reports
 
-Reports are saved as Markdown in `library/reports/`. View them via:
+Reports are saved as Markdown in `library/reports/` with persistent numbering.
+Each new report is numbered from the highest existing report number + 1, so
+running the agent multiple times never overwrites earlier reports. View them via:
 
 ```bash
 python3 run.py report --cycle latest

@@ -9,6 +9,26 @@ The system navigates the combinatorial space of algebraic identities using 7 pre
 
 ---
 
+## What This Does
+
+This system automatically discovers new algebraic structures that have never been named or studied. It starts from 14 well-known structures (groups, rings, lattices, etc.), applies systematic transformations to generate tens of thousands of candidates, then uses SMT solvers to find which ones have real finite models -- not just syntactic artifacts.
+
+**Input:** A research goal in plain English (e.g., *"find structures with models only at prime sizes"*), a set of starting structures, and search parameters (depth, model size limits).
+
+**Output:**
+- **Discovered structures** saved as JSON files, each containing a full algebraic signature (sorts, operations, axioms), a derivation chain showing how it was built, finite model examples as Cayley tables, and a 10-dimensional interestingness score.
+- **Conjectures** about those structures (e.g., *"models exist only at even sizes"*), some verified by automated theorem proving.
+- **Cycle reports** in Markdown documenting what the agent explored, what it found, and why it considers certain structures interesting.
+
+You can run it in two modes:
+
+1. **Manual (no LLM needed):** Use the CLI to explore, score, and model-check candidates yourself. The structure engine, scorer, and Z3 solver work without any AI.
+2. **Autonomous agent:** An LLM (Claude via the Claude Code CLI) plans which regions of the search space to explore, interprets results, proposes conjectures, and decides which discoveries to keep -- running in multi-cycle research loops with full live observability.
+
+The system has already produced 14 novel discoveries across 5 agent cycles, including structures with unusual model spectra (models only at even sizes, only at primes) and structures that bridge different algebraic domains.
+
+---
+
 ## Table of Contents
 
 - [Why This Exists](#why-this-exists)

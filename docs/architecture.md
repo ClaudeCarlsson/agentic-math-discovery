@@ -624,6 +624,13 @@ library/
     cycle_002_report.md
 ```
 
+### Persistence Guarantees
+
+- **Discovery IDs** are derived from the maximum existing ID in `library/discovered/`, not from file count. Deleting a file will never cause ID collisions.
+- **Fingerprint deduplication** covers both the 14 seed structures and all previously discovered structures. `add_discovery()` checks existing discovery files for a matching fingerprint before writing and returns the existing path if a duplicate is found.
+- **Report numbering** is persistent across agent runs. `_save_report()` scans existing report files and uses `max_existing + 1`, so running the agent multiple times never overwrites earlier reports.
+- **Name sanitization** strips any `disc_NNNN_` prefix from the name argument before building filenames, preventing double-prefixed filenames like `disc_0013_disc_0009_Name.json`.
+
 ### Discovery JSON Schema
 
 Each discovery file (`disc_NNNN_name.json`) contains:
