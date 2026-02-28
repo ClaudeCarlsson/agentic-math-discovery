@@ -103,7 +103,7 @@ Finally, run the test suite:
 python3 -m pytest tests/ -v
 ```
 
-You should see 95 tests passing. If any fail, check that you have `z3-solver` installed (`pip install z3-solver`).
+You should see 96 tests passing. If any fail, check that you have `z3-solver` installed (`pip install z3-solver`).
 
 ---
 
@@ -316,14 +316,14 @@ This command does three things:
 │ connectivity     │ 0.500 ██████████░░░░░░░░░░    │
 │ richness         │ 1.000 ████████████████████    │
 │ tension          │ 0.500 ██████████░░░░░░░░░░    │
-│ economy          │ 0.800 ████████████████░░░░    │
-│ fertility        │ 0.167 ███░░░░░░░░░░░░░░░░░    │
+│ economy          │ 0.920 ██████████████████░░    │
+│ fertility        │ 0.333 ██████░░░░░░░░░░░░░░    │
 │ has_models       │ 0.000 ░░░░░░░░░░░░░░░░░░░░    │
 │ model_diversity  │ 0.000 ░░░░░░░░░░░░░░░░░░░░    │
 │ spectrum_pattern │ 0.000 ░░░░░░░░░░░░░░░░░░░░    │
 │ is_novel         │ 0.000 ░░░░░░░░░░░░░░░░░░░░    │
 │ distance         │ 0.000 ░░░░░░░░░░░░░░░░░░░░    │
-│ total            │ 0.220 ████░░░░░░░░░░░░░░░░    │
+│ total            │ 0.272 █████░░░░░░░░░░░░░░░    │
 └──────────────────┴───────────────────────────────┘
 ```
 

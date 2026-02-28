@@ -500,7 +500,7 @@ The `ScoringEngine` evaluates candidates across 10 dimensions, each normalized t
 
 | Dimension | What it measures | How it's computed |
 |-----------|-----------------|-------------------|
-| `is_novel` | Not fingerprint-equivalent to anything known? | 0.0 if fingerprint matches a known structure, else 1.0. |
+| `is_novel` | Not fingerprint-equivalent to anything known or discovered? | 0.0 if fingerprint matches a known or previously discovered structure, else 1.0. |
 | `distance` | How far from nearest known structure? | (chain_length/5 + move_diversity/7) / 2. Longer chains and more diverse moves score higher. |
 
 ### Default Weights
@@ -772,14 +772,14 @@ The solver interface is implicit (Mace4Solver, Z3ModelFinder, and Mace4Fallback 
 | `src/moves/engine.py` | 540 | MoveEngine with 7 structural moves, MoveKind enum, MoveResult |
 | `src/models/cayley.py` | 187 | CayleyTable representation and analysis, isomorphism checking |
 | `src/solvers/fol_translator.py` | 164 | Signature-to-LADR and signature-to-Z3 translation |
-| `src/solvers/z3_solver.py` | 283 | Z3-based finite model finder with ITE-chain encoding |
+| `src/solvers/z3_solver.py` | 287 | Z3-based finite model finder with ITE-chain encoding |
 | `src/solvers/mace4.py` | 253 | Mace4 subprocess wrapper, output parser, Mace4Fallback |
 | `src/solvers/prover9.py` | 167 | Prover9 subprocess wrapper, ConjectureGenerator |
-| `src/scoring/engine.py` | 286 | ScoringEngine, ScoreBreakdown, 10 scoring dimensions |
-| `src/agent/tools.py` | 324 | 6 tool schemas, ToolExecutor with caching |
-| `src/agent/controller.py` | 318 | AgentController, CycleReport, 8-phase research loop |
+| `src/scoring/engine.py` | 285 | ScoringEngine, ScoreBreakdown, 10 scoring dimensions |
+| `src/agent/tools.py` | 323 | 6 tool schemas, ToolExecutor with caching |
+| `src/agent/controller.py` | 739 | AgentController, CycleReport, 4-phase research loop with live observability |
 | `src/library/known_structures.py` | 346 | 14 seed structures as factory functions |
-| `src/library/manager.py` | 149 | LibraryManager: JSON persistence, search, fingerprint index |
-| `src/cli.py` | 322 | Click CLI: explore, agent, list-structures, inspect, report |
+| `src/library/manager.py` | 182 | LibraryManager: JSON persistence, search, fingerprint dedup |
+| `src/cli.py` | 328 | Click CLI: explore, agent, list-structures, inspect, report |
 | `src/utils/display.py` | 118 | Rich console rendering for signatures, scores, spectra |
 | `run.py` | 7 | Entry point |

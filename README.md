@@ -240,7 +240,7 @@ agentic-math-discovery/
 │   │   └── manager.py             # Persistent storage for discoveries
 │   └── utils/
 │       └── display.py             # Rich console output
-├── tests/                         # 95 tests across 6 test files
+├── tests/                         # 96 tests across 6 test files
 │   ├── test_core.py               # AST and signature tests
 │   ├── test_moves.py              # Structural move tests
 │   ├── test_scoring.py            # Scoring engine tests
@@ -287,7 +287,7 @@ agentic-math-discovery/
 ## Testing
 
 ```bash
-# Run all 95 tests
+# Run all 96 tests
 python3 -m pytest tests/ -v
 
 # Run a specific test file

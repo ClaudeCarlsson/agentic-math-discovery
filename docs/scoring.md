@@ -410,7 +410,7 @@ Sig(name="MyGroup", sorts=["X"], ops=[star/2, unit/0, flip/1],
 
 **What it does not capture:** Operation domain/codomain sort assignments, axiom equations, or derivation history. Two signatures with the same fingerprint might have different axiom equations or sort assignments. The fingerprint is a fast filter, not a full isomorphism check.
 
-**Interaction with the library:** When scoring, the caller passes `known_fingerprints`, the set of fingerprints for all structures in the library. Any candidate matching a known fingerprint scores 0.0. The impact is large: 0.15 weight means rediscovering a known structure loses 15% of the maximum score.
+**Interaction with the library:** When scoring, the caller passes `known_fingerprints`, the set of fingerprints to check against. The agent's `ToolExecutor` calls `LibraryManager.all_fingerprints()`, which includes both the 14 seed structures and all previously discovered structures. Any candidate matching an existing fingerprint scores 0.0. The impact is large: 0.15 weight means rediscovering a known or previously discovered structure loses 15% of the maximum score.
 
 
 ### 10. Distance

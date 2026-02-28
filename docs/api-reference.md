@@ -250,9 +250,12 @@ result: Mace4Result = finder.find_models(
     domain_size: int,
     max_models: int = 10,
 )
+# result.domain_size: int
 # result.models_found: list[CayleyTable]
 # result.exit_code: int
 # result.raw_output: str
+# result.error: str
+# result.timed_out: bool
 
 spectrum: ModelSpectrum = finder.compute_spectrum(
     sig: Signature,
@@ -359,6 +362,7 @@ lie_algebra() vector_space() inner_product_space() category_sig()
 lib = LibraryManager(base_path="library")
 
 lib.known_fingerprints() -> list[str]
+lib.all_fingerprints() -> list[str]       # known + discovered
 lib.list_known() -> list[str]
 lib.list_discovered() -> list[dict]
 lib.add_discovery(sig, name, notes, score) -> Path
@@ -379,7 +383,7 @@ class AgentConfig:
     model: str = "claude-opus-4-6"    # Claude model
     effort: str = "high"              # Thinking effort: low, medium, high
     max_cycles: int = 10              # Maximum research cycles
-    goal: str = "Explore broadly"     # Natural language research goal
+    goal: str = "Explore broadly: find novel algebraic structures"
     explore_depth: int = 2            # Move depth per cycle
     max_model_size: int = 6           # Z3/Mace4 domain size limit
     score_threshold: float = 0.3      # Minimum score to consider

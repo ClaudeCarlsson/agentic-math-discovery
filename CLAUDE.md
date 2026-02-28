@@ -16,7 +16,7 @@ src/agent/          LLM agent controller + tool interface
 src/library/        Known structures library + persistence manager
 src/utils/          Rich console display
 src/cli.py          Click CLI entry point
-tests/              95 tests across 6 files
+tests/              96 tests across 6 files
 docs/               Detailed documentation
 ```
 
@@ -32,7 +32,7 @@ docs/               Detailed documentation
 ## Running Tests
 
 ```bash
-python3 -m pytest tests/ -v          # All 95 tests
+python3 -m pytest tests/ -v          # All 96 tests
 python3 -m pytest tests/ -v -k z3    # Just Z3 tests
 ```
 
