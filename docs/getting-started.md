@@ -83,6 +83,7 @@ Options:
 
 Commands:
   agent            Run the LLM-driven research agent.
+  backtest         Re-verify discovered structures.
   explore          Explore the space of algebraic structures using...
   inspect          Inspect a specific structure in detail.
   list-structures  List all known algebraic structures in the library.
@@ -103,7 +104,7 @@ Finally, run the test suite:
 python3 -m pytest tests/ -v
 ```
 
-You should see 169 tests passing. If any fail, check that you have `z3-solver` installed (`pip install z3-solver`).
+You should see 175 tests passing. If any fail, check that you have `z3-solver` installed (`pip install z3-solver`).
 
 ---
 
@@ -299,13 +300,15 @@ Structures with models at multiple sizes, and especially those whose spectra sho
 
 ## 7. Inspecting Structures
 
-To examine a single structure in depth, use `inspect`:
+To examine a single structure in depth, use `inspect`. It works with both known structures and discovered structures (by name or ID):
 
 ```bash
 python3 run.py inspect Group --max-size 5
+python3 run.py inspect disc_0035 --max-size 6
+python3 run.py inspect BoundedBandQuandle_345 --max-size 6
 ```
 
-This command does three things:
+This command does four things:
 
 **1. Shows the full signature definition** -- the same tree you saw in `list-structures`, with all sorts, operations, and axioms.
 
@@ -331,6 +334,8 @@ This command does three things:
 ```
 
 **3. Checks for finite models** up to the specified size and displays the model spectrum. After model checking, the score is recomputed with the model-theoretic dimensions filled in, so you can compare the pre-model and post-model scores.
+
+**4. Displays Cayley tables** for the smallest models found, showing the actual multiplication tables and properties (commutative, associative, Latin square, identity element).
 
 `inspect` is the tool to use when a candidate from `explore` catches your eye and you want the full picture.
 

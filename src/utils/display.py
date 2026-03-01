@@ -76,6 +76,62 @@ def display_spectrum(spectrum: ModelSpectrum) -> None:
         console.print(f"[bold]Total models:[/bold] {spectrum.total_models()}")
 
 
+def display_cayley_tables(spectrum: ModelSpectrum, max_tables: int = 3) -> None:
+    """Display example Cayley tables from the smallest models."""
+    shown = 0
+    for size in sorted(spectrum.models_by_size.keys()):
+        models = spectrum.models_by_size[size]
+        if not models:
+            continue
+        for i, model in enumerate(models[:2]):  # At most 2 per size
+            if shown >= max_tables:
+                return
+            for op_name, tbl in model.tables.items():
+                if tbl.ndim == 1:
+                    # Unary operation: display as a single-row mapping
+                    table = Table(
+                        title=f"{op_name} (size {size}, model {i + 1})",
+                        show_header=True,
+                        header_style="bold cyan",
+                    )
+                    table.add_column("x", style="bold", justify="right")
+                    for col in range(size):
+                        table.add_column(str(col), justify="center")
+                    table.add_row(f"{op_name}(x)", *[str(int(tbl[col])) for col in range(size)])
+                    console.print(table)
+                elif tbl.ndim == 2:
+                    # Binary operation: standard Cayley table
+                    table = Table(
+                        title=f"Cayley table: {op_name} (size {size}, model {i + 1})",
+                        show_header=True,
+                        header_style="bold cyan",
+                    )
+                    table.add_column(f"{op_name}", style="bold", justify="right")
+                    for col in range(size):
+                        table.add_column(str(col), justify="center")
+                    for row in range(size):
+                        table.add_row(str(row), *[str(int(tbl[row][col])) for col in range(size)])
+                    console.print(table)
+            # Properties (only for binary operations)
+            props = []
+            for op_name, tbl in model.tables.items():
+                if tbl.ndim != 2:
+                    continue
+                if model.is_commutative(op_name):
+                    props.append(f"{op_name}: commutative")
+                if model.is_latin_square(op_name):
+                    props.append(f"{op_name}: latin square")
+                identity = model.has_identity(op_name)
+                if identity is not None:
+                    props.append(f"{op_name}: identity={identity}")
+                if model.is_associative(op_name):
+                    props.append(f"{op_name}: associative")
+            if props:
+                console.print(f"  [dim]Properties: {', '.join(props)}[/dim]")
+            console.print()
+            shown += 1
+
+
 def display_exploration_results(results: list[dict[str, Any]], limit: int = 20) -> None:
     """Display exploration results as a table."""
     table = Table(title="Exploration Results")

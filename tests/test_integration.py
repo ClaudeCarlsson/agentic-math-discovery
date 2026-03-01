@@ -147,6 +147,65 @@ class TestToolExecutor:
                 assert result.get("status") == "added"
 
 
+    def test_explore_with_exclude_moves(self, executor):
+        """exclude_moves should prevent specific moves from being applied."""
+        # Explore with all moves
+        result_all = executor.execute("explore", {
+            "base_structures": ["Semigroup"],
+            "depth": 1,
+        })
+
+        # Explore excluding DUALIZE and COMPLETE
+        result_excluded = executor.execute("explore", {
+            "base_structures": ["Semigroup"],
+            "depth": 1,
+            "exclude_moves": ["DUALIZE", "COMPLETE"],
+        })
+
+        # Excluded should produce fewer candidates
+        assert result_excluded["total_candidates"] < result_all["total_candidates"]
+
+        # No excluded moves should appear in results
+        for c in result_excluded.get("candidates", []):
+            assert c["move"] not in ("DUALIZE", "COMPLETE"), (
+                f"Move {c['move']} should have been excluded"
+            )
+
+
+class TestAgentConfigExcludeMoves:
+    """Test that AgentConfig.exclude_moves is wired through to explore calls."""
+
+    def test_exclude_moves_injected_into_explore(self, tmp_path):
+        """Controller should inject exclude_moves into every explore call."""
+        from src.agent.controller import AgentConfig
+
+        config = AgentConfig(
+            exclude_moves=["ABSTRACT", "TRANSFER"],
+            base_structures=["Semigroup"],
+            explore_depth=1,
+        )
+
+        library = LibraryManager(tmp_path / "test_lib")
+        executor = ToolExecutor(library)
+
+        # Simulate what the controller does: inject exclude_moves
+        explore_args = {
+            "base_structures": config.base_structures,
+            "depth": config.explore_depth,
+            "score_threshold": config.score_threshold,
+        }
+        if config.exclude_moves:
+            explore_args["exclude_moves"] = config.exclude_moves
+
+        result = executor.execute("explore", explore_args)
+
+        # No ABSTRACT or TRANSFER moves should appear
+        for c in result.get("candidates", []):
+            assert c["move"] not in ("ABSTRACT", "TRANSFER"), (
+                f"Move {c['move']} should have been excluded"
+            )
+
+
 class TestZ3Integration:
     """Test Z3 model finding integrated with the full pipeline."""
 

@@ -419,6 +419,8 @@ class AgentConfig:
     max_model_size: int = 6           # Z3/Mace4 domain size limit
     score_threshold: float = 0.3      # Minimum score to consider
     base_structures: list[str] = ["Group", "Ring", "Lattice", "Quasigroup"]
+    exclude_moves: list[str] = []     # Moves to exclude (e.g. ["ABSTRACT", "TRANSFER"])
+    workers: int = min(cpu_count, 8)  # Parallel workers for model checking
 ```
 
 ### `src.agent.controller.AgentController`
@@ -441,6 +443,27 @@ Live progress is printed to the console throughout.
 ```python
 executor = ToolExecutor(library: LibraryManager)
 result: dict = executor.execute(tool_name: str, args: dict)
+
+# Batch model checking (used by agent controller for parallel execution)
+results: list[dict] = executor.check_models_batch(
+    signature_ids: list[str],
+    min_size: int = 2,
+    max_size: int = 6,
+    max_models_per_size: int = 10,
+    max_workers: int | None = None,
+)
 ```
 
 Available tools: `"explore"`, `"check_models"`, `"prove"`, `"score"`, `"search_library"`, `"add_to_library"`.
+
+### `src.solvers.parallel`
+
+```python
+from src.solvers.parallel import parallel_compute_spectra
+
+# Compute model spectra in parallel using ProcessPoolExecutor
+spectra: list[ModelSpectrum] = parallel_compute_spectra(
+    work_items: list[tuple],    # (sig, min_size, max_size, max_models, z3_timeout_ms, mace4_timeout)
+    max_workers: int | None = None,  # defaults to min(len(work_items), cpu_count)
+)
+```

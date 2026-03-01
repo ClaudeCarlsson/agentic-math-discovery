@@ -124,11 +124,12 @@ python3 run.py list-structures
 # Generate candidates from Group and Ring at depth 1
 python3 run.py explore --base Group --base Ring --depth 1 --top 10
 
-# Run depth-2 exploration with Z3 model checking
-python3 run.py explore --base Semigroup --depth 2 --check-models --max-size 6
+# Run depth-2 exploration with Z3 model checking (parallel with 8 workers)
+python3 run.py explore --base Semigroup --depth 2 --check-models --max-size 6 --workers 8
 
-# Inspect a specific structure in detail
+# Inspect a known or discovered structure in detail (with Cayley tables)
 python3 run.py inspect Group --max-size 5
+python3 run.py inspect disc_0035 --max-size 6
 ```
 
 ### Running the LLM Agent
@@ -147,6 +148,10 @@ python3 run.py agent --cycles 10 \
 # Use a different model or effort level
 python3 run.py agent --model sonnet --effort medium --cycles 3
 
+# Exclude specific moves and use parallel workers
+python3 run.py agent --cycles 10 --workers 8 --exclude-moves ABSTRACT,TRANSFER \
+  --goal "find novel algebraic structures"
+
 # View the results
 python3 run.py report --cycle latest
 ```
@@ -163,7 +168,7 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 |---------|-------------|
 | `list-structures` | Display all 15 known algebraic structures with their sorts, operations, and axioms |
 | `explore` | Generate candidate structures using structural moves, optionally check for models |
-| `inspect <name>` | Deep-dive into a specific structure: show definition, score, and finite models |
+| `inspect <name>` | Deep-dive into a known or discovered structure: show definition, score, finite models, and Cayley tables |
 | `agent` | Run the LLM-driven autonomous research loop |
 | `report` | View cycle reports and discovered structures |
 | `backtest` | Verify all existing discoveries still pass model-checking and fingerprint checks |
@@ -174,10 +179,12 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 --depth N          Search depth: 1 = direct moves, 2 = compositions (default: 1)
 --base NAME        Base structures to start from (repeatable; default: all 15)
 --moves NAME       Specific moves to apply (repeatable; default: all 8)
+--exclude-moves L  Comma-separated moves to exclude (e.g. ABSTRACT,TRANSFER)
 --check-models     Run Z3/Mace4 on top candidates to find finite models
 --max-size N       Maximum model size for model checking (default: 6)
 --threshold F      Minimum interestingness score to display (default: 0.0)
 --top N            Number of top candidates to show (default: 20)
+--workers N        Parallel workers for model checking (default: CPU count)
 ```
 
 ### `agent` Options
@@ -190,6 +197,8 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 --depth N          Exploration depth per cycle (default: 2)
 --max-size N       Maximum model size (default: 6)
 --base NAME        Base structures (repeatable)
+--exclude-moves L  Comma-separated moves to exclude (e.g. ABSTRACT,TRANSFER)
+--workers N        Parallel workers for model checking (default: CPU count, max 8)
 ```
 
 ---
@@ -231,7 +240,9 @@ agentic-math-discovery/
 │   │   ├── fol_translator.py      # Signature → first-order logic translation
 │   │   ├── z3_solver.py           # Z3-based finite model finder
 │   │   ├── mace4.py               # Mace4 integration + fallback
-│   │   └── prover9.py             # Prover9 theorem prover integration
+│   │   ├── prover9.py             # Prover9 theorem prover integration
+│   │   ├── router.py              # Smart solver routing based on signature
+│   │   └── parallel.py            # Parallel model checking via ProcessPoolExecutor
 │   ├── scoring/
 │   │   └── engine.py              # 10-dimensional interestingness scorer
 │   ├── agent/
@@ -243,12 +254,13 @@ agentic-math-discovery/
 │   │   └── failed/               # Archive of failed discoveries
 │   └── utils/
 │       └── display.py             # Rich console output
-├── tests/                         # 136 tests across 6 test files
+├── tests/                         # 175 tests across 7 test files
 │   ├── test_core.py               # AST and signature tests
 │   ├── test_moves.py              # Structural move tests
 │   ├── test_scoring.py            # Scoring engine tests
-│   ├── test_solvers.py            # Solver and Cayley table tests
+│   ├── test_solvers.py            # Solver, Cayley table, and parallel model checking tests
 │   ├── test_library.py            # Library and known structure tests
+│   ├── test_backtest.py           # Backtest verification tests
 │   └── test_integration.py        # End-to-end pipeline tests
 ├── library/                       # Persistent data (gitignored except known/)
 │   ├── known/
@@ -290,7 +302,7 @@ agentic-math-discovery/
 ## Testing
 
 ```bash
-# Run all 136 tests
+# Run all 175 tests
 python3 -m pytest tests/ -v
 
 # Run a specific test file

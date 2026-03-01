@@ -802,14 +802,15 @@ The solver interface is implicit (Mace4Solver, Z3ModelFinder, and Mace4Fallback 
 | `src/solvers/fol_translator.py` | 164 | Signature-to-LADR and signature-to-Z3 translation |
 | `src/solvers/z3_solver.py` | 287 | Z3-based finite model finder with ITE-chain encoding, symmetry breaking for heavy signatures |
 | `src/solvers/router.py` | ~130 | Smart solver routing based on signature characteristics |
+| `src/solvers/parallel.py` | ~40 | Parallel model checking via ProcessPoolExecutor |
 | `src/solvers/mace4.py` | 253 | Mace4 subprocess wrapper, output parser, Mace4Fallback |
 | `src/solvers/prover9.py` | 167 | Prover9 subprocess wrapper, ConjectureGenerator |
 | `src/scoring/engine.py` | 285 | ScoringEngine, ScoreBreakdown, 12 scoring dimensions |
-| `src/agent/tools.py` | 323 | 6 tool schemas, ToolExecutor with caching |
-| `src/agent/controller.py` | 739 | AgentController, CycleReport, 4-phase research loop with live observability |
+| `src/agent/tools.py` | ~350 | 6 tool schemas, ToolExecutor with caching, batch model checking |
+| `src/agent/controller.py` | ~770 | AgentController, CycleReport, 4-phase research loop with live observability |
 | `src/library/known_structures.py` | 346 | 15 seed structures as factory functions |
 | `src/library/manager.py` | 182 | LibraryManager: JSON persistence, search, fingerprint dedup |
-| `src/cli.py` | 328 | Click CLI: explore, agent, list-structures, inspect, report |
-| `src/utils/display.py` | 118 | Rich console rendering for signatures, scores, spectra |
+| `src/cli.py` | ~400 | Click CLI: explore, agent, list-structures, inspect, report, backtest |
+| `src/utils/display.py` | ~175 | Rich console rendering for signatures, scores, spectra, Cayley tables |
 | `backtest.py` | ~100 | Discovery verification gate, equation parser |
 | `run.py` | 7 | Entry point |

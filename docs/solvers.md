@@ -5,7 +5,7 @@ algebraic structure in mathematical truth. No structure is accepted on the
 strength of heuristics alone -- if a claimed model exists, a solver confirms it;
 if a conjecture is asserted, a prover checks it.
 
-This document covers the five solver-layer modules and the Cayley table analysis
+This document covers the six solver-layer modules and the Cayley table analysis
 library they produce results into.
 
 ```
@@ -15,6 +15,7 @@ src/solvers/
   mace4.py             Mace4 subprocess wrapper + fallback
   prover9.py           Theorem prover + conjecture generator
   router.py            Smart solver routing based on signature
+  parallel.py          Parallel model checking via ProcessPoolExecutor
 
 src/models/
   cayley.py            Cayley table storage and analysis
@@ -28,6 +29,7 @@ fol_translator  <--  prover9 (generates LADR input)
 z3_solver       <--  mace4  (Mace4Fallback delegates to Z3ModelFinder)
 z3_solver       <--  router (SmartSolverRouter uses Z3ModelFinder)
 mace4           <--  router (SmartSolverRouter uses Mace4Solver)
+router          <--  parallel (workers create fresh SmartSolverRouter instances)
 cayley          <--  z3_solver, mace4 (both produce CayleyTable objects)
 ```
 
@@ -42,6 +44,7 @@ cayley          <--  z3_solver, mace4 (both produce CayleyTable objects)
 5. [Cayley Table Analysis](#cayley-table-analysis)
 6. [Solver Selection and Fallback](#solver-selection-and-fallback)
 7. [Smart Solver Router](#smart-solver-router)
+8. [Parallel Model Checking](#parallel-model-checking)
 
 ---
 
@@ -785,3 +788,50 @@ spectrum = solver.compute_spectrum(sig, min_size=2, max_size=6)
 If neither Mace4 nor Z3 is available, `SmartSolverRouter.is_available()` returns `False`.
 
 For Prover9, there is no Z3-based fallback. If Prover9 is not installed, the `prove` tool returns an error directing the user to install it.
+
+---
+
+## Parallel Model Checking
+
+**File:** `src/solvers/parallel.py`
+
+Model checking dominates runtime (~90% of wall-clock time). The parallel module uses `ProcessPoolExecutor` to check multiple candidates concurrently.
+
+### Why Processes, Not Threads
+
+Z3 is **not thread-safe**. Each worker process creates its own `SmartSolverRouter` instance with fresh Z3/Mace4 solver instances. The top-level `_spectrum_worker` function is picklable for multiprocessing.
+
+### API
+
+```python
+from src.solvers.parallel import parallel_compute_spectra
+
+# Build work items: (sig, min_size, max_size, max_models, z3_timeout_ms, mace4_timeout)
+work_items = [
+    (sig, 2, 6, 10, 30000, 30)
+    for sig in candidate_signatures
+]
+
+# Run in parallel (defaults to min(len(work_items), cpu_count) workers)
+spectra = parallel_compute_spectra(work_items, max_workers=8)
+# Returns list[ModelSpectrum] in same order as work_items
+```
+
+### Sequential Fallback
+
+When `max_workers=1` or there is only a single work item, the function runs sequentially without spawning a process pool. This avoids multiprocessing overhead for trivial workloads.
+
+### Usage
+
+The parallel module is used by:
+- **CLI `explore --check-models --workers N`** — parallel model checking for top candidates
+- **CLI `agent --workers N`** — parallel model checking during agent research cycles
+- **CLI `backtest --workers N`** — parallel re-verification of discovered structures
+- **`ToolExecutor.check_models_batch()`** — batch model checking called by the agent controller
+
+### Expected Speedup
+
+| Scenario | Sequential | 8 Workers | Speedup |
+|----------|-----------|-----------|---------|
+| explore --check-models top=10 | ~5 min | ~1 min | ~5x |
+| agent cycle (top_n=10) | ~15 min | ~3 min | ~5x |

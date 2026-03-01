@@ -10,13 +10,13 @@ Agentic AI for Mathematical Structure Discovery — a neuro-symbolic system that
 src/core/           Core data structures (AST, Signature)
 src/moves/          8 structural moves (Abstract, Dualize, Complete, Quotient, Internalize, Transfer, Deform, SelfDistrib)
 src/models/         Cayley table representation and analysis
-src/solvers/        Z3, Mace4, Prover9 integration + smart solver router
+src/solvers/        Z3, Mace4, Prover9 integration + smart solver router + parallel model checking
 src/scoring/        12-dimensional interestingness scorer
 src/agent/          LLM agent controller + tool interface
 src/library/        Known structures library + persistence manager
 src/utils/          Rich console display
 src/cli.py          Click CLI entry point
-tests/              169 tests across 7 files
+tests/              175 tests across 7 files
 docs/               Detailed documentation
 ```
 
@@ -32,7 +32,7 @@ docs/               Detailed documentation
 ## Running Tests
 
 ```bash
-python3 -m pytest tests/ -v          # All 169 tests
+python3 -m pytest tests/ -v          # All 175 tests
 python3 -m pytest tests/ -v -k z3    # Just Z3 tests
 ```
 
@@ -41,9 +41,10 @@ python3 -m pytest tests/ -v -k z3    # Just Z3 tests
 ```bash
 python3 run.py list-structures
 python3 run.py explore --base Group --depth 1 --top 10
-python3 run.py explore --depth 2 --check-models --max-size 6
+python3 run.py explore --depth 2 --check-models --max-size 6 --workers 8
 python3 run.py inspect Semigroup --max-size 4
-python3 run.py agent --cycles 5 --goal "explore broadly"  # Needs claude CLI
+python3 run.py inspect disc_0035 --max-size 6  # Inspect discovered structures by name or ID
+python3 run.py agent --cycles 5 --goal "explore broadly" --workers 8 --exclude-moves ABSTRACT,TRANSFER
 ```
 
 ## Common Development Tasks

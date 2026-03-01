@@ -61,6 +61,8 @@ class AgentConfig:
     base_structures: list[str] = field(default_factory=lambda: [
         "Group", "Ring", "Lattice", "Quasigroup",
     ])
+    exclude_moves: list[str] = field(default_factory=list)
+    workers: int = field(default_factory=lambda: min(os.cpu_count() or 4, 8))
 
 
 SYSTEM_PROMPT = """\
@@ -425,12 +427,15 @@ class AgentController:
             )
 
             explore_start = time.time()
-            result = self.tools.execute("explore", {
+            explore_args = {
                 "base_structures": bases,
                 "moves": moves,
                 "depth": depth,
                 "score_threshold": self.config.score_threshold,
-            })
+            }
+            if self.config.exclude_moves:
+                explore_args["exclude_moves"] = self.config.exclude_moves
+            result = self.tools.execute("explore", explore_args)
             explore_elapsed = time.time() - explore_start
 
             n_candidates = result.get("total_candidates", 0)
@@ -459,62 +464,64 @@ class AgentController:
         max_size = plan.get("max_model_size", self.config.max_model_size)
 
         if top_n > 0:
+            workers = self.config.workers
             self._log(
                 f"Checking models for top {top_n} candidates "
-                f"(sizes 2-{max_size})..."
+                f"(sizes 2-{max_size}, workers={workers})..."
             )
+
+            check_start = time.time()
+            batch_results = self.tools.check_models_batch(
+                candidates=all_candidates[:top_n],
+                min_size=2,
+                max_size=max_size,
+                max_models_per_size=10,
+                max_workers=workers,
+            )
+            check_elapsed = time.time() - check_start
 
             found_count = 0
             empty_count = 0
 
-            for j, candidate in enumerate(all_candidates[:top_n], 1):
+            for j, (candidate, model_result) in enumerate(
+                zip(all_candidates[:top_n], batch_results), 1
+            ):
                 name = candidate["name"]
                 short_name = name[:45]
-                check_start = time.time()
 
-                try:
-                    model_result = self.tools.execute("check_models", {
-                        "signature_id": name,
-                        "min_size": 2,
-                        "max_size": max_size,
-                        "max_models_per_size": 10,
-                    })
-                    check_elapsed = time.time() - check_start
-
-                    spectrum = model_result.get("spectrum", {})
-                    total_models = model_result.get("total_models", 0)
-                    sizes = model_result.get("sizes_with_models", [])
-
-                    candidate["model_spectrum"] = spectrum
-                    candidate["total_models"] = total_models
-                    candidate["sizes_with_models"] = sizes
-                    model_results.append(model_result)
-
-                    if total_models > 0:
-                        found_count += 1
-                        # Highlight interesting spectra
-                        sizes_str = ",".join(str(s) for s in sorted(sizes))
-                        self._log(
-                            f"  [{j:2d}/{top_n}] [green]{short_name}[/green] "
-                            f"sizes={{{sizes_str}}} "
-                            f"models={total_models} "
-                            f"[dim]({check_elapsed:.1f}s)[/dim]"
-                        )
-                    else:
-                        empty_count += 1
-                        self._log(
-                            f"  [{j:2d}/{top_n}] [dim]{short_name} "
-                            f"no models ({check_elapsed:.1f}s)[/dim]"
-                        )
-
-                except Exception as e:
+                if "error" in model_result:
                     self._log(
-                        f"  [{j:2d}/{top_n}] [red]{short_name} error: {e}[/red]"
+                        f"  [{j:2d}/{top_n}] [red]{short_name} error: {model_result['error']}[/red]"
+                    )
+                    continue
+
+                spectrum = model_result.get("spectrum", {})
+                total_models = model_result.get("total_models", 0)
+                sizes = model_result.get("sizes_with_models", [])
+
+                candidate["model_spectrum"] = spectrum
+                candidate["total_models"] = total_models
+                candidate["sizes_with_models"] = sizes
+                model_results.append(model_result)
+
+                if total_models > 0:
+                    found_count += 1
+                    sizes_str = ",".join(str(s) for s in sorted(sizes))
+                    self._log(
+                        f"  [{j:2d}/{top_n}] [green]{short_name}[/green] "
+                        f"sizes={{{sizes_str}}} "
+                        f"models={total_models}"
+                    )
+                else:
+                    empty_count += 1
+                    self._log(
+                        f"  [{j:2d}/{top_n}] [dim]{short_name} no models[/dim]"
                     )
 
             self._log(
                 f"Model check: [green]{found_count} with models[/green], "
-                f"[dim]{empty_count} empty[/dim]"
+                f"[dim]{empty_count} empty[/dim] "
+                f"[dim]({check_elapsed:.1f}s total)[/dim]"
             )
 
         return {

@@ -89,6 +89,8 @@ class AgentConfig:
     base_structures: list[str] = [      # Starting structures
         "Group", "Ring", "Lattice", "Quasigroup"
     ]
+    exclude_moves: list[str] = []       # Moves to exclude (e.g. ["ABSTRACT", "TRANSFER"])
+    workers: int = min(cpu_count, 8)    # Parallel workers for model checking
 ```
 
 ### CLI Usage
@@ -104,6 +106,10 @@ python3 run.py agent --cycles 10 \
 
 # Use a different model or effort level
 python3 run.py agent --model sonnet --effort medium --cycles 3
+
+# Exclude specific moves and use parallel workers
+python3 run.py agent --cycles 10 --workers 8 --exclude-moves ABSTRACT,TRANSFER \
+  --goal "find novel algebraic structures"
 ```
 
 ### Prerequisites

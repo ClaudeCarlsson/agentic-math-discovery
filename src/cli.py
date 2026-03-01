@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -31,23 +32,25 @@ def main(ctx: click.Context, library_path: str) -> None:
 @main.command()
 @click.option("--depth", default=1, help="Search depth (1-3)")
 @click.option("--moves", multiple=True, help="Specific moves to apply")
-@click.option("--exclude-moves", multiple=True, help="Moves to exclude (e.g. DEFORM)")
+@click.option("--exclude-moves", default="", help="Comma-separated moves to exclude (e.g. DEFORM,ABSTRACT)")
 @click.option("--base", multiple=True, help="Base structures to start from")
 @click.option("--check-models", is_flag=True, help="Check candidates for finite models")
 @click.option("--max-size", default=6, help="Maximum model size to search")
 @click.option("--threshold", default=0.0, help="Minimum score threshold")
 @click.option("--top", default=20, help="Number of top candidates to display")
+@click.option("--workers", default=None, type=int, help="Parallel workers for model checking (default: CPU count)")
 @click.pass_context
 def explore(
     ctx: click.Context,
     depth: int,
     moves: tuple[str, ...],
-    exclude_moves: tuple[str, ...],
+    exclude_moves: str,
     base: tuple[str, ...],
     check_models: bool,
     max_size: int,
     threshold: float,
     top: int,
+    workers: int | None,
 ) -> None:
     """Explore the space of algebraic structures using structural moves."""
     from src.library.known_structures import load_all_known, load_by_name
@@ -83,8 +86,9 @@ def explore(
         move_kinds = None
 
     # Apply exclusions
-    if exclude_moves:
-        excluded = {MoveKind(m) for m in exclude_moves}
+    exclude_list = [m.strip() for m in exclude_moves.split(",") if m.strip()] if exclude_moves else []
+    if exclude_list:
+        excluded = {MoveKind(m) for m in exclude_list}
         if move_kinds is None:
             move_kinds = [m for m in MoveKind if m not in excluded]
         else:
@@ -137,29 +141,41 @@ def explore(
 
     # Check models for top candidates
     if check_models:
-        console.print(f"\n[bold]Checking models for top {min(top, len(scored))} candidates...[/bold]")
+        candidates_to_check = scored[:top]
+        console.print(f"\n[bold]Checking models for top {len(candidates_to_check)} candidates...[/bold]")
 
         from src.solvers.router import SmartSolverRouter
+        from src.solvers.parallel import parallel_compute_spectra
 
         solver = SmartSolverRouter()
         if not solver.is_available():
             console.print("[red]Neither Mace4 nor Z3 available. Install z3-solver: pip install z3-solver[/red]")
             return
 
-        for item in scored[:top]:
-            sig = item["_sig"]
-            console.print(f"\n  Checking [cyan]{sig.name}[/cyan]...")
-            spectrum = solver.compute_spectrum(sig, min_size=2, max_size=max_size)
+        # Build work items for parallel execution
+        work_items = [
+            (item["_sig"], 2, max_size, 10,
+             solver.z3_timeout_ms, solver.mace4_timeout)
+            for item in candidates_to_check
+        ]
 
+        effective_workers = workers if workers is not None else None
+        if effective_workers and effective_workers > 1:
+            console.print(f"  [dim]Using {effective_workers} parallel workers[/dim]")
+
+        spectra = parallel_compute_spectra(work_items, max_workers=effective_workers)
+
+        for item, spectrum in zip(candidates_to_check, spectra):
+            sig = item["_sig"]
             if not spectrum.is_empty():
-                console.print(f"    [green]Models found![/green] Spectrum: {spectrum.spectrum}")
+                console.print(f"\n  [cyan]{sig.name}[/cyan]: [green]Models found![/green] Spectrum: {spectrum.spectrum}")
                 display_spectrum(spectrum)
 
                 # Re-score with model information
                 score = scorer.score(sig, spectrum, known_fps)
                 display_score(sig.name, score)
             else:
-                console.print(f"    [dim]No models found up to size {max_size}[/dim]")
+                console.print(f"\n  [cyan]{sig.name}[/cyan]: [dim]No models found up to size {max_size}[/dim]")
 
     # Show details of top 3
     console.print(f"\n[bold]Top 3 candidates:[/bold]")
@@ -176,6 +192,8 @@ def explore(
 @click.option("--depth", default=2, help="Exploration depth per cycle")
 @click.option("--max-size", default=6, help="Maximum model size")
 @click.option("--base", multiple=True, help="Base structures")
+@click.option("--exclude-moves", default="", help="Comma-separated moves to exclude (e.g. ABSTRACT,TRANSFER)")
+@click.option("--workers", default=None, type=int, help="Parallel workers for model checking (default: CPU count, max 8)")
 @click.pass_context
 def agent(
     ctx: click.Context,
@@ -186,6 +204,8 @@ def agent(
     depth: int,
     max_size: int,
     base: tuple[str, ...],
+    exclude_moves: str,
+    workers: int | None,
 ) -> None:
     """Run the Claude CLI-driven research agent.
 
@@ -205,6 +225,8 @@ def agent(
         explore_depth=depth,
         max_model_size=max_size,
         base_structures=list(base) if base else ["Group", "Ring", "Lattice", "Quasigroup"],
+        exclude_moves=[m.strip() for m in exclude_moves.split(",") if m.strip()] if exclude_moves else [],
+        workers=min(workers, 8) if workers is not None else min(os.cpu_count() or 4, 8),
     )
 
     console.print(Panel(
@@ -215,7 +237,9 @@ def agent(
         f"Cycles: {cycles}\n"
         f"Base structures: {config.base_structures}\n"
         f"Explore depth: {depth}\n"
-        f"Max model size: {max_size}",
+        f"Max model size: {max_size}\n"
+        f"Workers: {config.workers}" +
+        (f"\nExclude moves: {config.exclude_moves}" if config.exclude_moves else ""),
         title="Agent Configuration",
         border_style="blue",
     ))
@@ -293,17 +317,37 @@ def report(ctx: click.Context, cycle: str, top: int, sort_by: str) -> None:
 @click.pass_context
 def inspect(ctx: click.Context, name: str, max_size: int) -> None:
     """Inspect a specific structure in detail."""
+    from src.core.signature import Signature
     from src.library.known_structures import load_by_name
-    from src.utils.display import display_signature, display_score, display_spectrum
+    from src.utils.display import display_signature, display_score, display_spectrum, display_cayley_tables
     from src.scoring.engine import ScoringEngine
     from src.solvers.router import SmartSolverRouter
 
     sig = load_by_name(name)
     if not sig:
-        console.print(f"[red]Structure '{name}' not found.[/red]")
-        from src.library.known_structures import KNOWN_STRUCTURES
-        console.print(f"Available: {', '.join(KNOWN_STRUCTURES.keys())}")
-        return
+        # Fall back to discovered structures (match by name or ID)
+        from src.library.manager import LibraryManager
+        library = LibraryManager(ctx.obj["library_path"])
+        disc = None
+        for d in library.list_discovered():
+            if d.get("name") == name or d.get("id") == name:
+                disc = d
+                break
+        if disc:
+            sig = Signature.from_dict(disc["signature"])
+            console.print(f"[dim]Loaded from discovered: {disc.get('id')} ({disc.get('name')})[/dim]")
+        else:
+            console.print(f"[red]Structure '{name}' not found.[/red]")
+            from src.library.known_structures import KNOWN_STRUCTURES
+            known_names = ', '.join(KNOWN_STRUCTURES.keys())
+            discovered = library.list_discovered()
+            disc_names = ', '.join(
+                f"{d['id']}={d['name']}" for d in discovered[:10]
+            )
+            console.print(f"Known: {known_names}")
+            if disc_names:
+                console.print(f"Discovered: {disc_names}")
+            return
 
     display_signature(sig)
 
@@ -318,6 +362,7 @@ def inspect(ctx: click.Context, name: str, max_size: int) -> None:
 
     spectrum = solver.compute_spectrum(sig, min_size=2, max_size=max_size)
     display_spectrum(spectrum)
+    display_cayley_tables(spectrum)
 
     # Re-score with model info
     score = scorer.score(sig, spectrum)
@@ -329,8 +374,9 @@ def inspect(ctx: click.Context, name: str, max_size: int) -> None:
 @click.option("--min-score", default=0.0, help="Only backtest discoveries above this score")
 @click.option("--id", "discovery_id", default=None, help="Backtest a specific discovery by ID")
 @click.option("--dry-run", is_flag=True, help="Show what would be archived without moving files")
+@click.option("--workers", default=None, type=int, help="Parallel workers for model checking (default: CPU count)")
 @click.pass_context
-def backtest(ctx: click.Context, max_size: int, min_score: float, discovery_id: str | None, dry_run: bool) -> None:
+def backtest(ctx: click.Context, max_size: int, min_score: float, discovery_id: str | None, dry_run: bool, workers: int | None) -> None:
     """Re-verify discovered structures: check models and score reproducibility.
 
     Failed discoveries are automatically moved to library/failed/.
@@ -343,6 +389,7 @@ def backtest(ctx: click.Context, max_size: int, min_score: float, discovery_id: 
         min_score=min_score,
         discovery_id=discovery_id,
         dry_run=dry_run,
+        workers=workers,
     )
     sys.exit(exit_code)
 

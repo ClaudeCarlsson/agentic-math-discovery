@@ -23,7 +23,6 @@ from rich.table import Table
 from src.core.signature import Signature
 from src.library.manager import LibraryManager
 from src.scoring.engine import ScoringEngine
-from src.solvers.z3_solver import Z3ModelFinder
 
 
 def run_backtest(
@@ -32,6 +31,7 @@ def run_backtest(
     min_score: float = 0.0,
     discovery_id: str | None = None,
     dry_run: bool = False,
+    workers: int | None = None,
 ) -> int:
     """Run backtest on all (or selected) discoveries.
 
@@ -60,7 +60,6 @@ def run_backtest(
 
     console.print(f"\n[bold]Backtesting {len(discoveries)} discoveries[/bold] (max_size={max_size})\n")
 
-    z3_finder = Z3ModelFinder()
     scorer = ScoringEngine()
 
     # Build fingerprint set excluding discovered structures themselves,
@@ -83,14 +82,16 @@ def run_backtest(
 
     discovered_dir = Path(library_path) / "discovered"
 
-    for disc in discoveries:
+    # Phase 1: Parse all signatures, collecting valid ones for parallel spectrum computation
+    parsed: list[tuple[int, dict, Signature]] = []  # (index, disc, sig)
+    for i, disc in enumerate(discoveries):
         disc_id = disc.get("id", "?")
         disc_name = disc.get("name", "?")
         orig_score = disc.get("score", 0.0)
 
-        # Reconstruct signature
         try:
             sig = Signature.from_dict(disc["signature"])
+            parsed.append((i, disc, sig))
         except Exception as e:
             results.append({"status": "FAIL", "id": disc_id, "reason": f"parse error: {e}"})
             table.add_row(
@@ -99,75 +100,83 @@ def run_backtest(
                 "[red]FAIL[/red]",
             )
             console.print(f"  [red]{disc_id}: Failed to reconstruct signature: {e}[/red]")
-            continue
 
-        # Re-verify models
-        try:
-            spectrum = z3_finder.compute_spectrum(sig, min_size=2, max_size=max_size)
-        except Exception as e:
-            results.append({"status": "FAIL", "id": disc_id, "reason": f"Z3 error: {e}"})
+    # Phase 2: Compute spectra in parallel for all valid signatures
+    if parsed:
+        from src.solvers.parallel import parallel_compute_spectra
+
+        z3_timeout_ms = 30000
+        mace4_timeout = 30
+        work_items = [
+            (sig, 2, max_size, 10, z3_timeout_ms, mace4_timeout)
+            for _, _, sig in parsed
+        ]
+
+        if workers and workers > 1:
+            console.print(f"  [dim]Using {workers} parallel workers[/dim]")
+
+        spectra = parallel_compute_spectra(work_items, max_workers=workers)
+
+        # Phase 3: Post-process results
+        for (_, disc, sig), spectrum in zip(parsed, spectra):
+            disc_id = disc.get("id", "?")
+            disc_name = disc.get("name", "?")
+            orig_score = disc.get("score", 0.0)
+
+            total_models = spectrum.total_models()
+            orig_had_models = disc.get("score_breakdown", {}).get("has_models", 0) > 0
+
+            # Re-score using only known fingerprints (not other discoveries),
+            # so is_novel stays 1.0 for genuinely novel structures.
+            # Add sibling discovery fingerprints but exclude this one's own.
+            scoring_fps = set(known_fps)
+            own_fp = disc.get("fingerprint")
+            for other in discoveries:
+                other_fp = other.get("fingerprint")
+                if other_fp and other_fp != own_fp:
+                    scoring_fps.add(other_fp)
+
+            new_score_bd = scorer.score(sig, spectrum, scoring_fps)
+            new_score = new_score_bd.total
+            delta = new_score - orig_score
+
+            # Determine status
+            if orig_had_models and total_models == 0 and not spectrum.any_timed_out():
+                status = "FAIL"
+                status_str = "[red]FAIL[/red]"
+                reason = "no models found (original had models)"
+            elif orig_had_models and total_models == 0 and spectrum.any_timed_out():
+                status = "WARN"
+                status_str = "[yellow]WARN[/yellow]"
+                reason = f"no models but Z3 timed out at sizes {spectrum.timed_out_sizes}"
+            elif total_models == 0 and not orig_had_models and not spectrum.any_timed_out():
+                status = "FAIL"
+                status_str = "[red]FAIL[/red]"
+                reason = "no models found"
+            else:
+                status = "PASS"
+                status_str = "[green]PASS[/green]"
+                reason = ""
+                # Queue score update for all passing discoveries
+                updates.append((disc, new_score, new_score_bd.to_dict()))
+
+            results.append({"status": status, "id": disc_id, "reason": reason})
+
+            # Format models column
+            sizes_with = spectrum.sizes_with_models()
+            timeout_note = f" T/O@{spectrum.timed_out_sizes}" if spectrum.any_timed_out() else ""
+            if sizes_with:
+                models_str = f"{total_models} ({len(sizes_with)} sizes){timeout_note}"
+            else:
+                models_str = f"0{timeout_note}"
+
+            delta_str = f"{delta:+.3f}" if delta != 0 else "0.000"
+
             table.add_row(
                 disc_id, disc_name,
-                f"{orig_score:.3f}", "ERR", "—", "—",
-                "[red]FAIL[/red]",
+                f"{orig_score:.3f}", f"{new_score:.3f}", delta_str,
+                models_str, status_str,
             )
-            console.print(f"  [red]{disc_id}: Z3 error: {e}[/red]")
-            continue
-
-        total_models = spectrum.total_models()
-        orig_had_models = disc.get("score_breakdown", {}).get("has_models", 0) > 0
-
-        # Re-score using only known fingerprints (not other discoveries),
-        # so is_novel stays 1.0 for genuinely novel structures.
-        # Add sibling discovery fingerprints but exclude this one's own.
-        scoring_fps = set(known_fps)
-        own_fp = disc.get("fingerprint")
-        for other in discoveries:
-            other_fp = other.get("fingerprint")
-            if other_fp and other_fp != own_fp:
-                scoring_fps.add(other_fp)
-
-        new_score_bd = scorer.score(sig, spectrum, scoring_fps)
-        new_score = new_score_bd.total
-        delta = new_score - orig_score
-
-        # Determine status
-        if orig_had_models and total_models == 0 and not spectrum.any_timed_out():
-            status = "FAIL"
-            status_str = "[red]FAIL[/red]"
-            reason = "no models found (original had models)"
-        elif orig_had_models and total_models == 0 and spectrum.any_timed_out():
-            status = "WARN"
-            status_str = "[yellow]WARN[/yellow]"
-            reason = f"no models but Z3 timed out at sizes {spectrum.timed_out_sizes}"
-        elif total_models == 0 and not orig_had_models and not spectrum.any_timed_out():
-            status = "FAIL"
-            status_str = "[red]FAIL[/red]"
-            reason = "no models found"
-        else:
-            status = "PASS"
-            status_str = "[green]PASS[/green]"
-            reason = ""
-            # Queue score update for all passing discoveries
-            updates.append((disc, new_score, new_score_bd.to_dict()))
-
-        results.append({"status": status, "id": disc_id, "reason": reason})
-
-        # Format models column
-        sizes_with = spectrum.sizes_with_models()
-        timeout_note = f" T/O@{spectrum.timed_out_sizes}" if spectrum.any_timed_out() else ""
-        if sizes_with:
-            models_str = f"{total_models} ({len(sizes_with)} sizes){timeout_note}"
-        else:
-            models_str = f"0{timeout_note}"
-
-        delta_str = f"{delta:+.3f}" if delta != 0 else "0.000"
-
-        table.add_row(
-            disc_id, disc_name,
-            f"{orig_score:.3f}", f"{new_score:.3f}", delta_str,
-            models_str, status_str,
-        )
 
     console.print(table)
 
@@ -233,6 +242,7 @@ if __name__ == "__main__":
     parser.add_argument("--id", dest="discovery_id", help="Backtest a specific discovery by ID")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be archived without moving files")
     parser.add_argument("--library-path", default="library", help="Path to library directory")
+    parser.add_argument("--workers", type=int, default=None, help="Parallel workers for model checking")
     args = parser.parse_args()
 
     sys.exit(run_backtest(
@@ -241,4 +251,5 @@ if __name__ == "__main__":
         min_score=args.min_score,
         discovery_id=args.discovery_id,
         dry_run=args.dry_run,
+        workers=args.workers,
     ))

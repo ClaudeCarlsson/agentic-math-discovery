@@ -425,3 +425,79 @@ class TestScoringTimeoutAwareness:
         )
         score = scorer.score(sig, spectrum=spectrum)
         assert score.has_models == 1.0
+
+
+class TestParallelComputeSpectra:
+    """Tests for parallel model checking."""
+
+    def test_parallel_compute_spectra_multiple_sigs(self):
+        """Parallel computation with 2 workers produces correct results."""
+        from src.solvers.parallel import parallel_compute_spectra
+        from src.solvers.z3_solver import Z3ModelFinder
+        if not Z3ModelFinder().is_available():
+            pytest.skip("z3-solver not installed")
+
+        sig_semi = semigroup()
+        sig_magma = magma()
+
+        work_items = [
+            (sig_semi, 2, 3, 5, 10000, 30),
+            (sig_magma, 2, 3, 5, 10000, 30),
+        ]
+
+        spectra = parallel_compute_spectra(work_items, max_workers=2)
+
+        assert len(spectra) == 2
+        # Semigroup should have models at sizes 2 and 3
+        assert spectra[0].spectrum[2] >= 1
+        assert spectra[0].signature_name == "Semigroup"
+        # Magma should have models at sizes 2 and 3
+        assert spectra[1].spectrum[2] >= 1
+        assert spectra[1].signature_name == "Magma"
+
+    def test_parallel_fallback_sequential(self):
+        """workers=1 produces same results as parallel."""
+        from src.solvers.parallel import parallel_compute_spectra
+        from src.solvers.z3_solver import Z3ModelFinder
+        if not Z3ModelFinder().is_available():
+            pytest.skip("z3-solver not installed")
+
+        sig = semigroup()
+        work_items = [(sig, 2, 3, 5, 10000, 30)]
+
+        sequential = parallel_compute_spectra(work_items, max_workers=1)
+        parallel = parallel_compute_spectra(work_items, max_workers=2)
+
+        assert len(sequential) == 1
+        assert len(parallel) == 1
+        # Both should find the same number of models at each size
+        assert sequential[0].spectrum == parallel[0].spectrum
+
+    def test_parallel_empty_work_items(self):
+        """Empty work items returns empty list."""
+        from src.solvers.parallel import parallel_compute_spectra
+        assert parallel_compute_spectra([]) == []
+
+    def test_parallel_preserves_order(self):
+        """Results are returned in the same order as work items."""
+        from src.solvers.parallel import parallel_compute_spectra
+        from src.solvers.z3_solver import Z3ModelFinder
+        if not Z3ModelFinder().is_available():
+            pytest.skip("z3-solver not installed")
+
+        sig_semi = semigroup()
+        sig_group = group()
+        sig_magma = magma()
+
+        work_items = [
+            (sig_semi, 2, 3, 5, 10000, 30),
+            (sig_group, 2, 3, 5, 10000, 30),
+            (sig_magma, 2, 3, 5, 10000, 30),
+        ]
+
+        spectra = parallel_compute_spectra(work_items, max_workers=2)
+
+        assert len(spectra) == 3
+        assert spectra[0].signature_name == "Semigroup"
+        assert spectra[1].signature_name == "Group"
+        assert spectra[2].signature_name == "Magma"

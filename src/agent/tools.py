@@ -147,6 +147,10 @@ class ToolExecutor:
         # Smart solver routing: picks Mace4 or Z3 based on signature
         self.model_finder = SmartSolverRouter()
 
+        # Store router config so parallel workers can recreate it
+        self.z3_timeout_ms = self.model_finder.z3_timeout_ms
+        self.mace4_timeout = self.model_finder.mace4_timeout
+
         self.prover9 = Prover9Solver()
         self.conjecture_gen = ConjectureGenerator()
 
@@ -267,6 +271,68 @@ class ToolExecutor:
                 if models
             },
         }
+
+    def check_models_batch(
+        self,
+        candidates: list[dict[str, Any]],
+        min_size: int = 2,
+        max_size: int = 8,
+        max_models_per_size: int = 10,
+        max_workers: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Check models for multiple candidates in parallel.
+
+        Returns a list of result dicts in the same order as candidates.
+        Each result is the same format as _check_models output.
+        """
+        from src.solvers.parallel import parallel_compute_spectra
+
+        # Resolve signatures and build work items
+        sigs: list[Signature | None] = []
+        for candidate in candidates:
+            name = candidate["name"]
+            sig = self._candidates.get(name) or load_by_name(name)
+            sigs.append(sig)
+
+        work_items = []
+        valid_indices = []
+        for i, sig in enumerate(sigs):
+            if sig is not None:
+                work_items.append((
+                    sig, min_size, max_size, max_models_per_size,
+                    self.z3_timeout_ms, self.mace4_timeout,
+                ))
+                valid_indices.append(i)
+
+        # Run parallel computation
+        spectra = parallel_compute_spectra(work_items, max_workers=max_workers)
+
+        # Build results
+        results: list[dict[str, Any]] = []
+        spectrum_iter = iter(spectra)
+        for i, candidate in enumerate(candidates):
+            name = candidate["name"]
+            sig = sigs[i]
+            if sig is None:
+                results.append({"error": f"Signature '{name}' not found"})
+                continue
+
+            spectrum = next(spectrum_iter)
+            self._spectra[name] = spectrum
+
+            results.append({
+                "signature": name,
+                "spectrum": spectrum.spectrum,
+                "sizes_with_models": spectrum.sizes_with_models(),
+                "total_models": spectrum.total_models(),
+                "example_models": {
+                    str(size): [m.to_dict() for m in models[:2]]
+                    for size, models in spectrum.models_by_size.items()
+                    if models
+                },
+            })
+
+        return results
 
     def _prove(self, args: dict[str, Any]) -> dict[str, Any]:
         sig_id = args["signature_id"]
